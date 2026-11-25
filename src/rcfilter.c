@@ -79,9 +79,10 @@
 #ifdef _WIN32
 #    include "utils.h"		/* for M_PI */
 #endif
+#include "dsp/legacy_sample.h"
 
 void
-LC_filter(data_block_t *db, int filter_no, double freq,
+LC_filter(data_block_t *db, int filter_no, double freq, double rate,
 	  struct filter_data *pp)
 {
     double          R,
@@ -101,8 +102,8 @@ LC_filter(data_block_t *db, int filter_no, double freq,
     C = 1.0 / (4.0 * pow(M_PI * freq, 2.0) * L);
     R = 300.0;
 
-    dt_div_C = 1.0 / (C * sample_rate);
-    dt_div_L = 1.0 / (L * sample_rate);
+    dt_div_C = 1.0 / (C * rate);
+    dt_div_L = 1.0 / (L * rate);
 
     for (t = 0; t < db->len; t++) {
 	if(isnan(*sound))
@@ -117,7 +118,7 @@ LC_filter(data_block_t *db, int filter_no, double freq,
 	pp->i[filter_no][0][currchannel] +=
 	    pp->di[filter_no][0][currchannel];
 
-	*sound = (int) (pp->i[filter_no][0][currchannel] * 500.0);
+	*sound = gnuitar_truncate_sample(pp->i[filter_no][0][currchannel] * 500.0);
 	if(isnan(*sound))
 	    *sound=0;
 	currchannel = (currchannel + 1) % db->channels;
@@ -144,12 +145,12 @@ RC_setup(int max, double amplify, struct filter_data *pp)
 }
 
 void
-RC_set_freq(double f, struct filter_data *pp)
+RC_set_freq(double f, double rate, struct filter_data *pp)
 {
     pp->R = 1000.0;
     pp->C = other(f, pp->R);
     pp->invR = 1.0 / pp->R;
-    pp->dt_div_C = 1.0 / (sample_rate * pp->C);
+    pp->dt_div_C = 1.0 / (rate * pp->C);
 }
 
 static void

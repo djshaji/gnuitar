@@ -11,11 +11,14 @@
 #include "dsp/tremolo_dsp.h"
 #include "dsp/vibrato_dsp.h"
 #include "dsp/noise_gate_dsp.h"
+#include "dsp/sustain_dsp.h"
+#include "dsp/distort_dsp.h"
 
 #define GNUITAR_URI "https://github.com/djshaji/gnuitar#"
 #define SINE_TABLE_SIZE 65536
 #define TWO_PI 6.28318530717958647692
 #define LEGACY_FULL_SCALE 8388608.0f
+#define DISTORT_BLOCK_FRAMES 128
 
 typedef struct {
     const float *inputs[2];
@@ -26,6 +29,8 @@ typedef struct {
     float *sine_table;
     VibratoDSP *vibrato;
     NoiseGateDSP gate;
+    double sustain_envelope[2];
+    DistortDSP *distort;
     uint32_t channels;
     uint32_t num_controls;
 } Plugin;
@@ -94,6 +99,9 @@ activate(LV2_Handle instance)
     Plugin *self = instance;
     self->phase = 0.0f;
     self->gate = (NoiseGateDSP) {0};
+    memset(self->sustain_envelope, 0, sizeof(self->sustain_envelope));
+    if (self->distort)
+        gnuitar_distort_reset(self->distort, self->sample_rate);
     if (self->vibrato) {
         memset(self->vibrato, 0, sizeof(*self->vibrato));
         hilbert_init(&self->vibrato->hilbert);
@@ -229,6 +237,93 @@ run_noise_gate(LV2_Handle instance, uint32_t frames)
     }
 }
 
+static void
+run_sustain(LV2_Handle instance, uint32_t frames)
+{
+    Plugin *self = instance;
+    int strength = (int) (control_value(self->controls[0], 100.0f, 0.0f, 100.0f) * 2.56);
+    int noise = (int) (control_value(self->controls[1], 15.625f, 0.0f, 100.0f) * 2.56);
+    int gate = (int) (control_value(self->controls[2], 100.0f, 0.0f, 100.0f) * 2.56);
+    double follow = noise / 256.0;
+    float weight = strength / 100.0f;
+    uint32_t frame, channel;
+
+    for (frame = 0; frame < frames; ++frame) {
+        float input[2];
+        read_frame(self, frame, input);
+        for (channel = 0; channel < self->channels; ++channel) {
+            float sample = input[channel] * LEGACY_FULL_SCALE;
+            double *envelope = &self->sustain_envelope[channel];
+            if (!isfinite(sample))
+                sample = 0.0f;
+            *envelope = (1.0 - follow) * *envelope + follow * fabs(sample);
+            self->outputs[channel][frame] =
+                gnuitar_sustain_sample(sample, *envelope, weight, gate) / LEGACY_FULL_SCALE;
+        }
+    }
+}
+
+static void
+run_distort(LV2_Handle instance, uint32_t frames)
+{
+    Plugin *self = instance;
+    int drive = (int) lroundf(control_value(self->controls[0], 55.5f, 1.0f, 100.0f) * 10.0f);
+    int saturation = (int) lroundf(control_value(self->controls[1], 100.0f / 3.0f,
+                                               1.0f, 100.0f) * 300.0f);
+    int level = (int) (control_value(self->controls[2], 7.8125f, 1.0f, 100.0f) * 2.56);
+    double lowpass = control_value(self->controls[3], 350.0f, 1.0f, 3000.0f);
+    DSP_SAMPLE scratch[2 * DISTORT_BLOCK_FRAMES];
+    uint32_t offset = 0;
+
+    /* Keep the legacy LC integrator stable on lower-rate hosts. */
+    lowpass = fmin(lowpass, self->sample_rate / 6.0);
+    while (offset < frames) {
+        uint32_t count = frames - offset;
+        uint32_t frame, channel;
+        data_block_t block = {.data = scratch, .channels = self->channels};
+
+        if (count > DISTORT_BLOCK_FRAMES)
+            count = DISTORT_BLOCK_FRAMES;
+        block.len = count * self->channels;
+
+        for (frame = 0; frame < count; ++frame) {
+            for (channel = 0; channel < self->channels; ++channel) {
+                float sample = self->inputs[channel][offset + frame] * LEGACY_FULL_SCALE;
+                scratch[frame * self->channels + channel] = isfinite(sample) ? sample : 0.0f;
+            }
+        }
+
+        gnuitar_distort_process(self->distort, &block, self->sample_rate,
+                                drive, saturation, level, lowpass);
+
+        for (frame = 0; frame < count; ++frame) {
+            for (channel = 0; channel < self->channels; ++channel) {
+                self->outputs[channel][offset + frame] =
+                    scratch[frame * self->channels + channel] / LEGACY_FULL_SCALE;
+            }
+        }
+        offset += count;
+    }
+}
+
+static Plugin *
+create_distort(double rate, uint32_t channels)
+{
+    Plugin *self;
+
+    if (rate < 8000.0)
+        return NULL;
+    self = create_instance(rate, channels, 4, false, false);
+    if (!self)
+        return NULL;
+    self->distort = malloc(sizeof(*self->distort));
+    if (!self->distort) {
+        free(self);
+        return NULL;
+    }
+    return self;
+}
+
 static Plugin *
 create_for_descriptor(const LV2_Descriptor *descriptor, double rate, uint32_t channels)
 {
@@ -238,6 +333,10 @@ create_for_descriptor(const LV2_Descriptor *descriptor, double rate, uint32_t ch
         return create_instance(rate, channels, 3, true, true);
     if (descriptor->run == run_noise_gate)
         return create_instance(rate, channels, 5, false, false);
+    if (descriptor->run == run_sustain)
+        return create_instance(rate, channels, 3, false, false);
+    if (descriptor->run == run_distort)
+        return create_distort(rate, channels);
     return create_instance(rate, channels, 1, false, false);
 }
 
@@ -245,6 +344,7 @@ static void
 cleanup(LV2_Handle instance)
 {
     Plugin *self = instance;
+    free(self->distort);
     free(self->vibrato);
     free(self->sine_table);
     free(self);
@@ -277,6 +377,10 @@ static const LV2_Descriptor descriptors[] = {
     {GNUITAR_URI "tremolo-bar-stereo", instantiate_stereo, connect_port, activate, run_vibrato, NULL, cleanup, NULL},
     {GNUITAR_URI "noise-gate-mono", instantiate_mono, connect_port, activate, run_noise_gate, NULL, cleanup, NULL},
     {GNUITAR_URI "noise-gate-stereo", instantiate_stereo, connect_port, activate, run_noise_gate, NULL, cleanup, NULL},
+    {GNUITAR_URI "sustain-mono", instantiate_mono, connect_port, activate, run_sustain, NULL, cleanup, NULL},
+    {GNUITAR_URI "sustain-stereo", instantiate_stereo, connect_port, activate, run_sustain, NULL, cleanup, NULL},
+    {GNUITAR_URI "distort-mono", instantiate_mono, connect_port, activate, run_distort, NULL, cleanup, NULL},
+    {GNUITAR_URI "distort-stereo", instantiate_stereo, connect_port, activate, run_distort, NULL, cleanup, NULL},
 };
 
 LV2_SYMBOL_EXPORT

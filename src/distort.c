@@ -303,55 +303,10 @@ distort_init(struct effect *p)
 static void
 distort_filter(struct effect *p, data_block_t *db)
 {
-    int             count,
-                    currchannel = 0;
-    DSP_SAMPLE     *s;
-    struct distort_params *dp;
-    double	    t;
+    struct distort_params *dp = p->params;
 
-    dp = (struct distort_params *) p->params;
-    /*
-     * sat clips derivative by limiting difference between samples. Use lastval 
-     * member to store last sample for seamlessness between chunks. 
-     */
-    count = db->len;
-    s = db->data;
-
-    RC_highpass(db, &(dp->fd));
-
-    while (count) {
-	/*
-	 * apply drive  
-	 */
-	t=*s;
-	t *= dp->drive;
-	t /= 16;
-
-	/*
-	 * apply sat 
-	 */
-	if ((t - dp->lastval[currchannel]) > (dp->sat << 8))
-	    t = dp->lastval[currchannel] + (dp->sat << 8);
-	else if ((dp->lastval[currchannel] - t) > (dp->sat << 8))
-	    t = dp->lastval[currchannel] - (dp->sat << 8);
-
-	dp->lastval[currchannel] = t;
-        currchannel = (currchannel + 1) % db->channels;
-        
-	t *= dp->level;
-	t /= 256;
-#ifdef CLIP_EVERYWHERE
-        CLIP_SAMPLE(t)
-#endif
-	if(isnan(t))
-	    t=0;
-	*s=t;
-
-	s++;
-	count--;
-    }
-
-    LC_filter(db, 0, dp->lowpass, &(dp->noise));
+    gnuitar_distort_process(&dp->dsp, db, sample_rate, dp->drive, dp->sat,
+                            dp->level, dp->lowpass);
 }
 
 static void
@@ -405,13 +360,7 @@ distort_create()
     ap->level = 20;
     ap->drive = 555;
     ap->lowpass = 350;
-    ap->noisegate = 3000;
-
-    RC_setup(10, 1.5, &(ap->fd));
-    RC_set_freq(ap->lowpass, &(ap->fd));
-
-    RC_setup(10, 1, &(ap->noise));
-    RC_set_freq(ap->noisegate, &(ap->noise));
+    gnuitar_distort_reset(&ap->dsp, sample_rate);
 
     return p;
 }
