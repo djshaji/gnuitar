@@ -6,10 +6,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <lv2/core/lv2.h>
 
 #include "biquad.h"
+#include "dsp/tubeamp_dsp.h"
 
 #define URI_PREFIX "https://github.com/djshaji/gnuitar#"
 #define FRAMES 4001
@@ -1226,6 +1228,122 @@ test_pitch(const LV2_Descriptor *descriptor, double rate, uint32_t channels,
     free(memory);
 }
 
+static double
+cabinet_magnitude(const DSP_SAMPLE *impulse, int length, double rate, double hz)
+{
+    double real = 0.0, imag = 0.0;
+    int tap;
+
+    for (tap = 0; tap < length; ++tap) {
+        double phase = TWO_PI * hz * tap / rate;
+        real += impulse[tap] * cos(phase);
+        imag += impulse[tap] * sin(phase);
+    }
+    return hypot(real, imag);
+}
+
+static void
+test_tube_cabinet(double rate)
+{
+    const double frequencies[] = {100.0, 500.0, 1000.0, 3000.0, 5000.0, 8000.0};
+    DSP_SAMPLE impulse[GNUITAR_TUBE_CAPACITY];
+    int model, quality;
+
+    for (model = 0; model < GNUITAR_TUBE_MODELS; ++model) {
+        for (quality = 0; quality < GNUITAR_TUBE_QUALITIES; ++quality) {
+            int source_length = gnuitar_tube_lengths[quality];
+            int length = (int) ceil(source_length * rate / GNUITAR_TUBE_SOURCE_RATE);
+            unsigned int i;
+
+            gnuitar_tube_resample(impulse, length, gnuitar_tube_sources[model], source_length, rate);
+            if (rate == GNUITAR_TUBE_SOURCE_RATE)
+                CHECK(memcmp(impulse, gnuitar_tube_sources[model], length * sizeof(*impulse)) == 0);
+            for (i = 0; i < sizeof(frequencies) / sizeof(frequencies[0]); ++i) {
+                double original = cabinet_magnitude(gnuitar_tube_sources[model], source_length,
+                                                      GNUITAR_TUBE_SOURCE_RATE, frequencies[i]);
+                double output = cabinet_magnitude(impulse, length, rate, frequencies[i]);
+                CHECK(fabs(20.0 * log10(output / original)) < 1.0);
+            }
+        }
+    }
+}
+
+static void
+test_tubeamp(const LV2_Descriptor *descriptor, double rate, uint32_t channels,
+             const char *bundle_path)
+{
+    const uint32_t count = 20003;
+    const size_t bytes = count * sizeof(float);
+    Plugin plugin = open_plugin(descriptor, channels, rate, bundle_path);
+    float *memory = calloc(6, bytes);
+    float *left, *right, *out_l, *out_r, *alternate_l, *alternate_r;
+    float settings[] = {4, 35, -7, -3500, 0, 3, 3, -10, 0};
+    uint32_t i, control, offset = 0;
+    clock_t started, elapsed;
+
+    CHECK(memory);
+    left = memory;
+    right = left + count;
+    out_l = right + count;
+    out_r = out_l + count;
+    alternate_l = out_r + count;
+    alternate_r = alternate_l + count;
+    for (i = 0; i < count; ++i) {
+        left[i] = (float) (0.3 * sin(TWO_PI * 220.0 * i / rate));
+        right[i] = (float) (0.2 * sin(TWO_PI * 330.0 * i / rate));
+    }
+    for (control = 0; control < sizeof(settings) / sizeof(settings[0]); ++control)
+        connect_control(plugin, control, &settings[control]);
+
+    connect_audio(plugin, left, right, out_l, out_r);
+    descriptor->activate(plugin.handle);
+    started = clock();
+    descriptor->run(plugin.handle, count);
+    elapsed = clock() - started;
+    if (started != (clock_t) -1 && elapsed > 0)
+        printf("Tube Amplifier %.0f Hz, %u channel(s), max cabinet: %.2f ms CPU for %.2f ms audio\n",
+               rate, channels, 1000.0 * elapsed / CLOCKS_PER_SEC, 1000.0 * count / rate);
+    for (i = 0; i < count; ++i) {
+        CHECK(isfinite(out_l[i]));
+        if (channels == 2)
+            CHECK(isfinite(out_r[i]));
+    }
+    CHECK(memcmp(left, out_l, bytes) != 0);
+
+    if (channels == 2) {
+        /* Bias from a driven left channel must not change the right output. */
+        descriptor->activate(plugin.handle);
+        connect_audio(plugin, alternate_l, right, alternate_l, alternate_r);
+        descriptor->run(plugin.handle, count);
+        CHECK(memcmp(out_r, alternate_r, bytes) == 0);
+        CHECK(memcmp(out_l, alternate_l, bytes) != 0);
+    }
+
+    descriptor->activate(plugin.handle);
+    while (offset < count) {
+        uint32_t block = offset % 43 + 1;
+        if (block > count - offset)
+            block = count - offset;
+        connect_audio(plugin, left + offset, right + offset,
+                      (channels == 2 ? right : left) + offset, left + offset);
+        descriptor->run(plugin.handle, block);
+        offset += block;
+    }
+    CHECK(memcmp(out_l, channels == 2 ? right : left, bytes) == 0);
+    if (channels == 2)
+        CHECK(memcmp(out_r, left, bytes) == 0);
+
+    settings[4] = 1;
+    for (i = 0; i < count; ++i)
+        left[i] = (float) (0.3 * sin(TWO_PI * 220.0 * i / rate));
+    descriptor->activate(plugin.handle);
+    connect_audio(plugin, left, left, alternate_l, alternate_r);
+    descriptor->run(plugin.handle, count);
+    CHECK(memcmp(out_l, alternate_l, bytes) != 0);
+    descriptor->cleanup(plugin.handle);
+    free(memory);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1246,6 +1364,7 @@ main(int argc, char **argv)
         URI_PREFIX "rotary-speaker-mono-to-stereo",
         URI_PREFIX "autowah-mono", URI_PREFIX "autowah-stereo",
         URI_PREFIX "pitch-shift-mono", URI_PREFIX "pitch-shift-stereo",
+        URI_PREFIX "tube-amplifier-mono", URI_PREFIX "tube-amplifier-stereo",
     };
     const LV2_Descriptor *(*get_descriptor)(uint32_t);
     void *library;
@@ -1274,6 +1393,16 @@ main(int argc, char **argv)
         const LV2_Descriptor *descriptor = get_descriptor(i);
         uint32_t channels = i % 2 + 1;
         CHECK(descriptor && strcmp(descriptor->URI, uris[i]) == 0);
+        if (i >= 35) {
+            const double rates[] = {44100.0, 48000.0, 96000.0};
+            unsigned int rate;
+            for (rate = 0; rate < sizeof(rates) / sizeof(rates[0]); ++rate) {
+                if (i == 35)
+                    test_tube_cabinet(rates[rate]);
+                test_tubeamp(descriptor, rates[rate], i == 35 ? 1 : 2, bundle_path);
+            }
+            continue;
+        }
         if (i >= 33) {
             test_pitch(descriptor, 44100.0, i == 33 ? 1 : 2, bundle_path);
             test_pitch(descriptor, 48000.0, i == 33 ? 1 : 2, bundle_path);

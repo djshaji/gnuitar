@@ -1,0 +1,29 @@
+name: LV2 validation
+
+on: [pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake lv2-dev lilv-utils libgtk2.0-dev
+      - name: Build LV2
+        run: |
+          cmake -S lv2 -B build-lv2 -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS="-Wall -Wextra -Werror"
+          cmake --build build-lv2 --parallel
+      - name: Test LV2 and report DSP timing
+        run: ctest --test-dir build-lv2 --verbose --output-on-failure
+      - name: Build standalone GTK2 with OSS
+        run: |
+          sources=$(awk '/^gnuitar_SOURCES =/{collect=1} collect && /^$/{exit} collect{for(i=1;i<=NF;i++) if($i ~ /\.c$/) print "src/" $i}' src/Makefile.am)
+          cc -std=gnu99 -O2 -ffast-math -Wno-deprecated-declarations -D_GNU_SOURCE \
+             -DHAVE_GTK2 -DHAVE_OSS -DFLOAT_DSP '-DVERSION="0.3.2"' '-DG_LOG_DOMAIN="gnuitar"' \
+             $(pkg-config --cflags gtk+-2.0 gthread-2.0) $sources \
+             $(pkg-config --libs gtk+-2.0 gthread-2.0) -lm -o build-lv2/gnuitar-standalone
