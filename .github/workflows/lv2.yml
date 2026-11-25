@@ -34,6 +34,7 @@ jobs:
           mkdir -p build-lv2/legacy
           git show "$reference:src/tubeamp.c" > build-lv2/legacy/tubeamp.c
           git show "$reference:src/tubeamp.h" > build-lv2/legacy/tubeamp.h
+          printf '\nconst float *legacy_transfer_table(void) { return nonlinearity; }\n' >> build-lv2/legacy/tubeamp.c
           cc -std=gnu99 -O2 -D_GNU_SOURCE -DHAVE_GTK2 -DFLOAT_DSP -Wno-deprecated-declarations \
              -Ibuild-lv2/legacy -Isrc $(pkg-config --cflags gtk+-2.0 gthread-2.0) \
              lv2/tests/tubeamp_legacy_compare.c build-lv2/legacy/tubeamp.c src/biquad.c \
