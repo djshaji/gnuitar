@@ -111,3 +111,22 @@ cmake --install build-lv2
 
 The plugins support in-place processing and reset their DSP state on
 activation. The library has no GTK, sound-device, or Lilv dependency.
+
+## Linux release candidate
+
+On a successful [LV2 validation workflow run](https://github.com/djshaji/gnuitar/actions/workflows/lv2.yml),
+download the `gnuitar-lv2-linux-x86_64` artifact and unpack the downloaded
+ZIP. Inside it is a `gnuitar-lv2-linux-x86_64-<commit>.tar.gz` archive
+built on Ubuntu 24.04. The workflow extracts that archive, verifies all
+39 plugin URIs and their port symbols with Lilv, and runs the DSP tests
+against the packaged shared library before uploading it.
+
+From the directory containing the tarball, extract the bundle to your
+user LV2 directory:
+
+```sh
+mkdir -p "$HOME/.lv2"
+tar -xzf gnuitar-lv2-linux-x86_64-*.tar.gz -C "$HOME/.lv2"
+```
+
+Restart your LV2 host or rescan its plugins after installing the bundle.

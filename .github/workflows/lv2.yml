@@ -39,3 +39,45 @@ jobs:
              lv2/tests/tubeamp_legacy_compare.c build-lv2/legacy/tubeamp.c src/biquad.c \
              $(pkg-config --libs gtk+-2.0 gthread-2.0) -lm -ldl -o build-lv2/tubeamp-legacy-compare
           build-lv2/tubeamp-legacy-compare "$PWD/build-lv2/bundles/gnuitar.lv2/gnuitar.so"
+
+  linux-release-candidate:
+    name: Linux LV2 release candidate
+    needs: linux
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install packaging and verification dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake lv2-dev lilv-utils
+      - name: Build and stage the LV2 bundle
+        run: |
+          cmake -S lv2 -B build-lv2 -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS="-Wall -Wextra -Werror" -DGNUITAR_LV2_INSTALL_DIR=lv2
+          cmake --build build-lv2 --parallel
+          cmake --install build-lv2 --prefix "$PWD/stage"
+      - name: Package the release candidate
+        run: |
+          mkdir -p dist
+          commit=$(git rev-parse HEAD)
+          timestamp=$(git show -s --format=%ct HEAD)
+          archive="dist/gnuitar-lv2-linux-x86_64-${commit:0:12}.tar.gz"
+          tar --sort=name --mtime="@${timestamp}" --owner=0 --group=0 --numeric-owner \
+            -C stage/lv2 -cf - gnuitar.lv2 | gzip -n > "$archive"
+      - name: Verify the extracted bundle
+        run: |
+          mkdir extracted
+          tar -xzf dist/*.tar.gz -C extracted
+          LV2_PATH="$PWD/extracted" cmake -DLV2LS=lv2ls -DLV2INFO=lv2info \
+            -P lv2/tests/discovery.cmake
+          build-lv2/test_pilot "$PWD/extracted/gnuitar.lv2/gnuitar.so"
+      - name: Upload the validated Linux archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: gnuitar-lv2-linux-x86_64
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
