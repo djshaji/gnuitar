@@ -1,7 +1,7 @@
 # GNUitar LV2 plugins
 
 The Linux bundle provides Digital Amp, Tremolo, Tremolo Bar, Noise Gate,
-Sustain, Distort, and Overdrive.
+Sustain, Distort, Overdrive, and Eq Bank.
 Each effect has mono and stereo variants, and controls take effect at host
 block boundaries.
 
@@ -28,6 +28,11 @@ block boundaries.
   treble scale. The solver and filters keep separate histories per channel.
   Silent input continues to advance those histories so tails can decay
   across block boundaries.
+- Eq Bank has 14 fixed bands from 40 Hz to 16 kHz and a separate
+  output gain. All gains range from −9.9 to +9.9 dB. Filters use twice
+  the host sample rate and maintain separate histories for each channel.
+  At low sample rates, bands whose upper edge reaches the oversampled
+  Nyquist frequency are skipped.
 
 ## Build and test
 

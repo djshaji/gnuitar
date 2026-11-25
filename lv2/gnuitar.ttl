@@ -865,3 +865,365 @@ gt:overdrive-stereo
         lv2:maximum 6.0 ;
         units:unit units:db
     ] .
+
+gt:eq-bank-mono
+    a lv2:Plugin , lv2:MultiEQPlugin ;
+    doap:name "GNUitar Eq Bank (Mono)" ;
+    doap:license <COPYING> ;
+    lv2:minorVersion 0 ;
+    lv2:microVersion 1 ;
+    lv2:port
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 0 ;
+        lv2:symbol "in" ;
+        lv2:name "Input"
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 1 ;
+        lv2:symbol "out" ;
+        lv2:name "Output"
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 2 ;
+        lv2:symbol "band_40_db" ;
+        lv2:name "40 Hz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 3 ;
+        lv2:symbol "band_100_db" ;
+        lv2:name "100 Hz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 4 ;
+        lv2:symbol "band_200_db" ;
+        lv2:name "200 Hz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 5 ;
+        lv2:symbol "band_320_db" ;
+        lv2:name "320 Hz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 6 ;
+        lv2:symbol "band_640_db" ;
+        lv2:name "640 Hz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 7 ;
+        lv2:symbol "band_1000_db" ;
+        lv2:name "1 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 8 ;
+        lv2:symbol "band_1600_db" ;
+        lv2:name "1.6 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 9 ;
+        lv2:symbol "band_2200_db" ;
+        lv2:name "2.2 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 10 ;
+        lv2:symbol "band_3000_db" ;
+        lv2:name "3 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 11 ;
+        lv2:symbol "band_4000_db" ;
+        lv2:name "4 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 12 ;
+        lv2:symbol "band_6000_db" ;
+        lv2:name "6 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 13 ;
+        lv2:symbol "band_8000_db" ;
+        lv2:name "8 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 14 ;
+        lv2:symbol "band_12000_db" ;
+        lv2:name "12 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 15 ;
+        lv2:symbol "band_16000_db" ;
+        lv2:name "16 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 16 ;
+        lv2:symbol "gain_db" ;
+        lv2:name "Output Gain" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ] .
+
+gt:eq-bank-stereo
+    a lv2:Plugin , lv2:MultiEQPlugin ;
+    doap:name "GNUitar Eq Bank (Stereo)" ;
+    doap:license <COPYING> ;
+    lv2:minorVersion 0 ;
+    lv2:microVersion 1 ;
+    pg:mainInput gt:stereo-input ;
+    pg:mainOutput gt:stereo-output ;
+    lv2:port
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 0 ;
+        lv2:symbol "in_l" ;
+        lv2:name "Input Left" ;
+        pg:group gt:stereo-input ;
+        lv2:designation pg:left
+    ],
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 1 ;
+        lv2:symbol "in_r" ;
+        lv2:name "Input Right" ;
+        pg:group gt:stereo-input ;
+        lv2:designation pg:right
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 2 ;
+        lv2:symbol "out_l" ;
+        lv2:name "Output Left" ;
+        pg:group gt:stereo-output ;
+        lv2:designation pg:left
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 3 ;
+        lv2:symbol "out_r" ;
+        lv2:name "Output Right" ;
+        pg:group gt:stereo-output ;
+        lv2:designation pg:right
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 4 ;
+        lv2:symbol "band_40_db" ;
+        lv2:name "40 Hz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 5 ;
+        lv2:symbol "band_100_db" ;
+        lv2:name "100 Hz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 6 ;
+        lv2:symbol "band_200_db" ;
+        lv2:name "200 Hz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 7 ;
+        lv2:symbol "band_320_db" ;
+        lv2:name "320 Hz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 8 ;
+        lv2:symbol "band_640_db" ;
+        lv2:name "640 Hz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 9 ;
+        lv2:symbol "band_1000_db" ;
+        lv2:name "1 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 10 ;
+        lv2:symbol "band_1600_db" ;
+        lv2:name "1.6 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 11 ;
+        lv2:symbol "band_2200_db" ;
+        lv2:name "2.2 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 12 ;
+        lv2:symbol "band_3000_db" ;
+        lv2:name "3 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 13 ;
+        lv2:symbol "band_4000_db" ;
+        lv2:name "4 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 14 ;
+        lv2:symbol "band_6000_db" ;
+        lv2:name "6 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 15 ;
+        lv2:symbol "band_8000_db" ;
+        lv2:name "8 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 16 ;
+        lv2:symbol "band_12000_db" ;
+        lv2:name "12 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 17 ;
+        lv2:symbol "band_16000_db" ;
+        lv2:name "16 kHz" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 18 ;
+        lv2:symbol "gain_db" ;
+        lv2:name "Output Gain" ;
+        lv2:default 0.0 ;
+        lv2:minimum -9.9 ;
+        lv2:maximum 9.9 ;
+        units:unit units:db
+    ] .
