@@ -5,7 +5,7 @@
 #ifndef GNUITAR_VIBRATO_DSP_H
 #define GNUITAR_VIBRATO_DSP_H
 
-#include "biquad.h"
+#include "../biquad.h"
 
 typedef struct {
     Hilbert_t hilbert;
