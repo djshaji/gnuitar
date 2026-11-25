@@ -189,8 +189,8 @@
 #endif
 
 #define GUI_UPDATE_INTERVAL	125.0 /* ms */
-#define MIN_HZ	    27.5	/* lowest tone that will work: freq. of A */
-#define MAX_HZ	    400.0	/* highest tone that will work */
+#define MIN_HZ      GNUITAR_TUNER_MIN_HZ
+#define MAX_HZ      GNUITAR_TUNER_MAX_HZ
 #define NOTES_N	    12		/* the note scale */
 #define NOTES_TO_C  9		/* how many notes to C sound from MIN_HZ */
 #define MAX_STRINGS 6		/* max.number of strings */
@@ -460,6 +460,7 @@ timeout_update_label(gpointer gp)
     return TRUE;
 }
 
+#ifdef HAVE_FFTW3
 static int
 cmp_float(const void *a, const void *b)
 {
@@ -480,18 +481,10 @@ tuner_filter(struct effect *p, data_block_t *db)
     DSP_SAMPLE	       *s;
     float		power = 0,
 			freq = 0;
-#ifdef HAVE_FFTW3
     float               weighted_bin = 0,
                         weighted_bin_n = 0,
                         maxlen = 0;
     int                 maxbin = 0;
-#else
-    float               good_loop_len = 0,
-			good_loop_len_n = 0,
-			max_diff = 0,
-			max_tmp2 = 0;
-    int                 loop_len;
-#endif
     s = db->data;
     params = p->params;
 
@@ -526,7 +519,6 @@ tuner_filter(struct effect *p, data_block_t *db)
         return;
     }
 
-#ifdef HAVE_FFTW3
 #define FFT_SIZE 4096
 #define HISTORY_SIZE FFT_SIZE
 
@@ -588,61 +580,6 @@ tuner_filter(struct effect *p, data_block_t *db)
     weighted_bin /= weighted_bin_n;
 
     freq = (float) sample_rate / weighted_bin;
-#else
-#define HISTORY_SIZE 1200	/* history buffer size: allows ~40 Hz */
-#define COMPARE_LEN 192		/* sample data examining length */
-
-    /* now look for similarities in the history buffer.
-     * we start from the beginning of the history
-     * and look for the first sequence that repeats
-     * self-similarly enough (specified using power below). */
-
-    /* 128 is semirandomly chosen. Higher values would work, too, but I want
-     * the loop to have a good chance of finding a match. There shouldn't be
-     * any more noise, and the weighing at end should keep precision good. */
-    max_diff = power * COMPARE_LEN / 128.0;
-    /* this value must be much higher or we give up too early on noisy signal */
-    max_tmp2 = power / 3.0;
-    loop_len = sample_rate / MAX_HZ - 1;
-  NEXT_SEARCH:
-    while (++loop_len < HISTORY_SIZE - COMPARE_LEN) {
-        float diff = 0;
-        float weight = 0;
-        for (i = 0; i < COMPARE_LEN; i += 1) {
-            DSP_SAMPLE tmp = params->history->get(params->history, i) - params->history->get(params->history, i + loop_len);
-            float tmp2 = tmp * tmp;
-            diff += tmp2;
-            /* give up as soon as possible */
-            if (diff > max_diff || tmp2 > max_tmp2) {
-    	        /* exit when it looks like the values are getting worse */
-	        if (good_loop_len_n != 0 && i < (int) (COMPARE_LEN * 0.98))
-	            goto END_SEARCH;
-	        else
-	            goto NEXT_SEARCH;
-            }
-        }
-        /* weigh results by goodness of match */
-        weight = 1.f - diff / max_diff + 0.001f; /* guard against 0 */
-        weight = weight * weight;
-        good_loop_len   += loop_len * weight;
-        good_loop_len_n += weight;
-    }
-  END_SEARCH:
-
-    /* did we find any? */
-    if (good_loop_len_n == 0) {
-        params->freq = 0;
-        return;
-    }
-    
-    /* average loop len; hopefully better than any of the discrete values */
-    good_loop_len /= good_loop_len_n;
-
-    /* If we are reinitializing, prefill the history to improve the time
-     * it takes to get a valid median */
-    freq = sample_rate / good_loop_len;
-#endif
-
     if (params->freq == 0) {
 	for (i = 0; i < FREQ_SIZE; i += 1) {
             params->freq_history[i] = freq;
@@ -668,6 +605,30 @@ tuner_filter(struct effect *p, data_block_t *db)
     return;
 }
 
+#else
+static void
+tuner_filter(struct effect *p, data_block_t *db)
+{
+    struct tuner_params *params = p->params;
+    int frame, channel;
+
+    if (sample_rate < GNUITAR_TUNER_MIN_RATE || sample_rate > GNUITAR_TUNER_MAX_RATE) {
+        params->freq = 0;
+        return;
+    }
+    if (params->dsp.host_rate != sample_rate)
+        gnuitar_tuner_reset(&params->dsp, sample_rate);
+
+    for (frame = 0; frame < db->len; frame += db->channels) {
+        float sum = 0.0f;
+        for (channel = 0; channel < db->channels; ++channel)
+            sum += db->data[frame + channel] / (float) MAX_SAMPLE;
+        gnuitar_tuner_push(&params->dsp, sum / db->channels);
+    }
+    params->freq = params->dsp.frequency;
+}
+#endif
+
 /* this method is asynchronous because of timer that needs to cancel itself */
 static void
 tuner_done(effect_t *p)
@@ -681,8 +642,13 @@ tuner_done(effect_t *p)
 static void
 tuner_done_really(effect_t *p) {
     struct tuner_params *params = p->params;
-    
+
+#ifdef HAVE_FFTW3
+    fftwf_destroy_plan(params->fftfw);
+    fftwf_destroy_plan(params->fftbw);
+    fftwf_free(params->fftin);
     del_Backbuf(params->history);
+#endif
     free(p->params);
     gtk_widget_destroy(p->control);
     free(p);
@@ -692,7 +658,9 @@ effect_t *
 tuner_create()
 {
     effect_t       *p;
+#ifdef HAVE_FFTW3
     struct tuner_params *params;
+#endif
 
     /* standard effect init */
     p = calloc(1, sizeof(effect_t));
@@ -703,11 +671,10 @@ tuner_create()
     p->proc_save = NULL;
     p->proc_load = NULL;
     p->toggle = 1;
-    
-    params = p->params;
-    params->history = new_Backbuf(HISTORY_SIZE);
 
 #ifdef HAVE_FFTW3
+    params = p->params;
+    params->history = new_Backbuf(HISTORY_SIZE);
     /* prepare for FFT transforms */
     params->fftin = fftwf_malloc(sizeof(fftwf_complex) * FFT_SIZE);
     params->fftfw = fftwf_plan_dft_1d(FFT_SIZE, params->fftin, params->fftin, FFTW_FORWARD, FFTW_ESTIMATE);

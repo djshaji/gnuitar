@@ -2830,3 +2830,141 @@ gt:tube-amplifier-stereo
         lv2:maximum 10.0 ;
         units:unit units:db
     ] .
+
+gt:tuner-mono
+    a lv2:Plugin , lv2:AnalyserPlugin ;
+    doap:name "GNUitar Tuner (Mono)" ;
+    doap:license <COPYING> ;
+    lv2:minorVersion 0 ;
+    lv2:microVersion 1 ;
+    lv2:optionalFeature lv2:hardRTCapable ;
+    lv2:port
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 0 ;
+        lv2:symbol "in" ;
+        lv2:name "Input"
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 1 ;
+        lv2:symbol "out" ;
+        lv2:name "Output"
+    ],
+    [
+        a lv2:OutputPort , lv2:ControlPort ;
+        lv2:index 2 ;
+        lv2:symbol "frequency_hz" ;
+        lv2:name "Frequency" ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 400.0 ;
+        units:unit units:hz
+    ],
+    [
+        a lv2:OutputPort , lv2:ControlPort ;
+        lv2:index 3 ;
+        lv2:symbol "midi_note" ;
+        lv2:name "Nearest MIDI Note" ;
+        lv2:minimum -1 ;
+        lv2:maximum 127 ;
+        units:unit units:midiNote ;
+        lv2:portProperty lv2:integer
+    ],
+    [
+        a lv2:OutputPort , lv2:ControlPort ;
+        lv2:index 4 ;
+        lv2:symbol "cents" ;
+        lv2:name "Deviation" ;
+        lv2:minimum -50.0 ;
+        lv2:maximum 50.0 ;
+        units:unit units:cent
+    ],
+    [
+        a lv2:OutputPort , lv2:ControlPort ;
+        lv2:index 5 ;
+        lv2:symbol "valid" ;
+        lv2:name "Valid Pitch" ;
+        lv2:minimum 0 ;
+        lv2:maximum 1 ;
+        lv2:portProperty lv2:toggled
+    ] .
+
+gt:tuner-stereo
+    a lv2:Plugin , lv2:AnalyserPlugin ;
+    doap:name "GNUitar Tuner (Stereo)" ;
+    doap:license <COPYING> ;
+    lv2:minorVersion 0 ;
+    lv2:microVersion 1 ;
+    lv2:optionalFeature lv2:hardRTCapable ;
+    pg:mainInput gt:stereo-input ;
+    pg:mainOutput gt:stereo-output ;
+    lv2:port
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 0 ;
+        lv2:symbol "in_l" ;
+        lv2:name "Input Left" ;
+        pg:group gt:stereo-input ;
+        lv2:designation pg:left
+    ],
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 1 ;
+        lv2:symbol "in_r" ;
+        lv2:name "Input Right" ;
+        pg:group gt:stereo-input ;
+        lv2:designation pg:right
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 2 ;
+        lv2:symbol "out_l" ;
+        lv2:name "Output Left" ;
+        pg:group gt:stereo-output ;
+        lv2:designation pg:left
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 3 ;
+        lv2:symbol "out_r" ;
+        lv2:name "Output Right" ;
+        pg:group gt:stereo-output ;
+        lv2:designation pg:right
+    ],
+    [
+        a lv2:OutputPort , lv2:ControlPort ;
+        lv2:index 4 ;
+        lv2:symbol "frequency_hz" ;
+        lv2:name "Frequency" ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 400.0 ;
+        units:unit units:hz
+    ],
+    [
+        a lv2:OutputPort , lv2:ControlPort ;
+        lv2:index 5 ;
+        lv2:symbol "midi_note" ;
+        lv2:name "Nearest MIDI Note" ;
+        lv2:minimum -1 ;
+        lv2:maximum 127 ;
+        units:unit units:midiNote ;
+        lv2:portProperty lv2:integer
+    ],
+    [
+        a lv2:OutputPort , lv2:ControlPort ;
+        lv2:index 6 ;
+        lv2:symbol "cents" ;
+        lv2:name "Deviation" ;
+        lv2:minimum -50.0 ;
+        lv2:maximum 50.0 ;
+        units:unit units:cent
+    ],
+    [
+        a lv2:OutputPort , lv2:ControlPort ;
+        lv2:index 7 ;
+        lv2:symbol "valid" ;
+        lv2:name "Valid Pitch" ;
+        lv2:minimum 0 ;
+        lv2:maximum 1 ;
+        lv2:portProperty lv2:toggled
+    ] .

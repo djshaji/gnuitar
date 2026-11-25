@@ -15,7 +15,7 @@ gnuitar_SOURCES =  amp.c main.c pump.c chorus.c delay.c echo.c tracker.c tremolo
 	dsp/vibrato_dsp.h dsp/noise_gate_dsp.h dsp/distort_dsp.h \
 	dsp/sustain_dsp.h dsp/legacy_sample.h dsp/overdrive_dsp.h dsp/eqbank_dsp.h \
 	dsp/delay_echo_dsp.h dsp/reverb_chorus_dsp.h dsp/spatial_dsp.h dsp/autowah_dsp.h dsp/pitch_dsp.h \
-	dsp/tubeamp_dsp.h dsp/tubeamp_transfer.h
+	dsp/tubeamp_dsp.h dsp/tubeamp_transfer.h dsp/tuner_dsp.h
 
 EXTRA_DIST = *.c *.h Makefile* *.rc *.xpm
 

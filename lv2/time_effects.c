@@ -495,31 +495,38 @@ instantiate_mono_to_stereo(const LV2_Descriptor *descriptor, double rate, const 
     return create(rate, 1, 2, effect_kind(descriptor));
 }
 
+static const LV2_Descriptor descriptors[] = {
+    {GNUITAR_URI "delay-mono", instantiate_mono, connect_port, activate, run_delay, NULL, cleanup, NULL},
+    {GNUITAR_URI "delay-stereo", instantiate_stereo, connect_port, activate, run_delay, NULL, cleanup, NULL},
+    {GNUITAR_URI "delay-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_delay, NULL, cleanup, NULL},
+    {GNUITAR_URI "echo-mono", instantiate_mono, connect_port, activate, run_echo, NULL, cleanup, NULL},
+    {GNUITAR_URI "echo-stereo", instantiate_stereo, connect_port, activate, run_echo, NULL, cleanup, NULL},
+    {GNUITAR_URI "echo-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_echo, NULL, cleanup, NULL},
+    {GNUITAR_URI "reverb-mono", instantiate_mono, connect_port, activate, run_reverb, NULL, cleanup, NULL},
+    {GNUITAR_URI "reverb-stereo", instantiate_stereo, connect_port, activate, run_reverb, NULL, cleanup, NULL},
+    {GNUITAR_URI "chorus-mono", instantiate_mono, connect_port, activate, run_chorus, NULL, cleanup, NULL},
+    {GNUITAR_URI "chorus-stereo", instantiate_stereo, connect_port, activate, run_chorus, NULL, cleanup, NULL},
+    {GNUITAR_URI "chorus-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_chorus, NULL, cleanup, NULL},
+    {GNUITAR_URI "phaser-mono", instantiate_mono, connect_port, activate, run_phaser, NULL, cleanup, NULL},
+    {GNUITAR_URI "phaser-stereo", instantiate_stereo, connect_port, activate, run_phaser, NULL, cleanup, NULL},
+    {GNUITAR_URI "phaser-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_phaser, NULL, cleanup, NULL},
+    {GNUITAR_URI "rotary-speaker-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_rotary, NULL, cleanup, NULL},
+    {GNUITAR_URI "autowah-mono", instantiate_mono, connect_port, activate, run_autowah, NULL, cleanup, NULL},
+    {GNUITAR_URI "autowah-stereo", instantiate_stereo, connect_port, activate, run_autowah, NULL, cleanup, NULL},
+    {GNUITAR_URI "pitch-shift-mono", instantiate_mono, connect_port, activate, run_pitch, NULL, cleanup, NULL},
+    {GNUITAR_URI "pitch-shift-stereo", instantiate_stereo, connect_port, activate, run_pitch, NULL, cleanup, NULL},
+    {GNUITAR_URI "tube-amplifier-mono", instantiate_mono, connect_port, activate, run_tubeamp, NULL, cleanup, NULL},
+    {GNUITAR_URI "tube-amplifier-stereo", instantiate_stereo, connect_port, activate, run_tubeamp, NULL, cleanup, NULL},
+};
+
+uint32_t
+gnuitar_time_effect_count(void)
+{
+    return sizeof(descriptors) / sizeof(descriptors[0]);
+}
+
 const LV2_Descriptor *
 gnuitar_time_effect_descriptor(uint32_t index)
 {
-    static const LV2_Descriptor descriptors[] = {
-        {GNUITAR_URI "delay-mono", instantiate_mono, connect_port, activate, run_delay, NULL, cleanup, NULL},
-        {GNUITAR_URI "delay-stereo", instantiate_stereo, connect_port, activate, run_delay, NULL, cleanup, NULL},
-        {GNUITAR_URI "delay-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_delay, NULL, cleanup, NULL},
-        {GNUITAR_URI "echo-mono", instantiate_mono, connect_port, activate, run_echo, NULL, cleanup, NULL},
-        {GNUITAR_URI "echo-stereo", instantiate_stereo, connect_port, activate, run_echo, NULL, cleanup, NULL},
-        {GNUITAR_URI "echo-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_echo, NULL, cleanup, NULL},
-        {GNUITAR_URI "reverb-mono", instantiate_mono, connect_port, activate, run_reverb, NULL, cleanup, NULL},
-        {GNUITAR_URI "reverb-stereo", instantiate_stereo, connect_port, activate, run_reverb, NULL, cleanup, NULL},
-        {GNUITAR_URI "chorus-mono", instantiate_mono, connect_port, activate, run_chorus, NULL, cleanup, NULL},
-        {GNUITAR_URI "chorus-stereo", instantiate_stereo, connect_port, activate, run_chorus, NULL, cleanup, NULL},
-        {GNUITAR_URI "chorus-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_chorus, NULL, cleanup, NULL},
-        {GNUITAR_URI "phaser-mono", instantiate_mono, connect_port, activate, run_phaser, NULL, cleanup, NULL},
-        {GNUITAR_URI "phaser-stereo", instantiate_stereo, connect_port, activate, run_phaser, NULL, cleanup, NULL},
-        {GNUITAR_URI "phaser-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_phaser, NULL, cleanup, NULL},
-        {GNUITAR_URI "rotary-speaker-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_rotary, NULL, cleanup, NULL},
-        {GNUITAR_URI "autowah-mono", instantiate_mono, connect_port, activate, run_autowah, NULL, cleanup, NULL},
-        {GNUITAR_URI "autowah-stereo", instantiate_stereo, connect_port, activate, run_autowah, NULL, cleanup, NULL},
-        {GNUITAR_URI "pitch-shift-mono", instantiate_mono, connect_port, activate, run_pitch, NULL, cleanup, NULL},
-        {GNUITAR_URI "pitch-shift-stereo", instantiate_stereo, connect_port, activate, run_pitch, NULL, cleanup, NULL},
-        {GNUITAR_URI "tube-amplifier-mono", instantiate_mono, connect_port, activate, run_tubeamp, NULL, cleanup, NULL},
-        {GNUITAR_URI "tube-amplifier-stereo", instantiate_stereo, connect_port, activate, run_tubeamp, NULL, cleanup, NULL},
-    };
-    return index < sizeof(descriptors) / sizeof(descriptors[0]) ? &descriptors[index] : NULL;
+    return index < gnuitar_time_effect_count() ? &descriptors[index] : NULL;
 }
