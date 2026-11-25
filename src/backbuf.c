@@ -69,6 +69,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <limits.h>
+#include <stdint.h>
 
 static void
 backbuf_add(Backbuf_t *b, const BUF_TYPE d)
@@ -107,13 +109,27 @@ new_Backbuf(const unsigned int max_delay)
 {
     unsigned int size;
     
-    Backbuf_t *b = calloc(1, sizeof(Backbuf_t));
+    Backbuf_t *b;
 
-    b->nstor = max_delay + 1;
+    if (max_delay >= UINT_MAX / 2 + 1)
+        return NULL;
     size = 1;
-    while (size < b->nstor)
+    while (size <= max_delay)
         size <<= 1;
+#if SIZE_MAX <= UINT_MAX
+    if (size > SIZE_MAX / sizeof(BUF_TYPE))
+        return NULL;
+#endif
+
+    b = calloc(1, sizeof(*b));
+    if (!b)
+        return NULL;
     b->storage = calloc(size, sizeof(BUF_TYPE));
+    if (!b->storage) {
+        free(b);
+        return NULL;
+    }
+    b->nstor = max_delay + 1;
     b->mask = size - 1;
     b->curpos = 0;
     b->add = backbuf_add;
@@ -126,6 +142,8 @@ new_Backbuf(const unsigned int max_delay)
 void
 del_Backbuf(Backbuf_t *b)
 {
+    if (!b)
+        return;
     free(b->storage);
     free(b);
 }

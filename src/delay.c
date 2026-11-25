@@ -136,9 +136,6 @@
 #    include <io.h>
 #endif
 
-/* used to swap rear channels */
-static const int circular_order[] = { 0, 1, 3, 2 };
-
 static void
 update_delay_decay(GtkAdjustment *adj, struct delay_params *params)
 {
@@ -305,106 +302,37 @@ delay_init(struct effect *p)
 }
 
 static void
-delay_filter_mono(effect_t *p, data_block_t *db)
-{
-    struct delay_params *dp = p->params;
-    int             i,
-                    count,
-                    current_delay = 0;
-    double          current_decay, delay_inc, decay_fac;
-    DSP_SAMPLE     *s, newval;
-    int             curr_channel = 0;
-
-    s = db->data;
-    count = db->len;
-
-    delay_inc = dp->delay_time / 1000.0 * sample_rate;
-    decay_fac = dp->delay_decay / 100.0;
-    
-    /* this is a simple mono version that treats all channels separately */
-    while (count) {
-        newval = 0;
-        current_delay = 0;
-        current_decay = 1.0;
-        for (i = 0; i < dp->delay_count; i += 1) {
-            current_delay += delay_inc;
-            current_decay *= decay_fac;
-
-            newval += dp->history[curr_channel]->get(dp->history[curr_channel], current_delay) * current_decay;
-	}
-        
-        /* write to history, add decay to current sample */
-        dp->history[curr_channel]->add(dp->history[curr_channel], *s);
-        *s += newval;
-
-        curr_channel = (curr_channel + 1) % db->channels;
-	s++;
-	count--;
-    }
-}
-
-/* this is a mono-to-N channel mixer */
-static void
-delay_filter_mc(effect_t *p, data_block_t *db)
-{
-    struct delay_params *dp = p->params;
-    int             i,
-                    count,
-                    current_delay = 0;
-    double          current_decay, delay_inc, decay_fac;
-    DSP_SAMPLE     *ins, *outs, newval;
-    int             curr_channel = 0;
-
-    /* this is only good for mono and up to 4 channels */
-    assert(db->channels == 1);
-    assert(n_output_channels <= 4);
-    
-    /* fill into provided output buffer */
-    ins = db->data;
-    outs = db->data_swap;
-    /* already swap the buffers for caller */
-    db->data = outs;
-    db->data_swap = ins;
-    
-    count = db->len;
-
-    db->channels = n_output_channels;
-    db->len *= n_output_channels;
-    
-    delay_inc = dp->delay_time / 1000.0 * sample_rate;
-    decay_fac = dp->delay_decay / 100.0;
-    
-    while (count) {
-        /* delays are distributed across channels from history */
-        dp->history[0]->add(dp->history[0], *ins++);
-
-        for (curr_channel = 0; curr_channel < db->channels; curr_channel += 1) {
-            current_delay = 0;
-            current_decay = 1.0;
-            newval = 0;
-	    /* +1 because we mix even the current data through history */
-            for (i = 0; i < dp->delay_count + 1; i += 1) {
-                /* mix only every Nth voice */
-                if (circular_order[i % db->channels] == curr_channel)
-		    newval += dp->history[0]->get(dp->history[0], current_delay) * current_decay;
-                current_delay += delay_inc;
-                current_decay *= decay_fac;
-            }
-            *outs++ = newval;
-        }
-        
-	count--;
-    }
-}
-
-static void
 delay_filter(effect_t *p, data_block_t *db)
 {
     struct delay_params *params = p->params;
+    int repeats = params->delay_count;
+    DelayTaps taps;
+    DSP_SAMPLE *input = db->data;
+    int frame, channel;
+
+    if (repeats < 0)
+        repeats = 0;
+    if (repeats > MAX_COUNT)
+        repeats = MAX_COUNT;
+    taps = gnuitar_delay_taps(sample_rate, params->delay_time, params->delay_decay, repeats);
+
     if (params->multichannel && db->channels == 1 && n_output_channels > 1) {
-        delay_filter_mc(p, db);
+        DSP_SAMPLE *output = db->data_swap;
+        for (frame = 0; frame < db->len; ++frame)
+            gnuitar_delay_spread(params->history[0], input[frame], &taps,
+                                 output + frame * n_output_channels, n_output_channels);
+
+        db->channels = n_output_channels;
+        db->len *= n_output_channels;
+        db->data = output;
+        db->data_swap = input;
     } else {
-	delay_filter_mono(p, db);
+        for (frame = 0; frame < db->len / db->channels; ++frame) {
+            for (channel = 0; channel < db->channels; ++channel) {
+                DSP_SAMPLE *sample = input + frame * db->channels + channel;
+                *sample = gnuitar_delay_channel(params->history[channel], *sample, &taps);
+            }
+        }
     }
 }
 

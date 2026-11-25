@@ -24,18 +24,15 @@
 #define _ECHO_H_ 1
 
 #include "effect.h"
-#include "backbuf.h"
+#include "dsp/delay_echo_dsp.h"
 
-#define MAX_ECHO_COUNT  4
-#define MAX_ECHO_LENGTH 500 /* ms */
+#define MAX_ECHO_COUNT GNUITAR_ECHO_MAX_VOICES
+#define MAX_ECHO_LENGTH GNUITAR_ECHO_MAX_MS
 
 effect_t *   echo_create(void);
 
 struct echo_params {
     Backbuf_t       *history[MAX_CHANNELS][MAX_ECHO_COUNT];
-    double          primes[MAX_ECHO_COUNT];
-    double          size_factor[MAX_ECHO_COUNT];
-    double          decay_factor[MAX_ECHO_COUNT];
     double          echo_size,
                     echo_decay;
     int             echoes;

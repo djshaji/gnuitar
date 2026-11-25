@@ -1,9 +1,9 @@
 # GNUitar LV2 plugins
 
 The Linux bundle provides Digital Amp, Tremolo, Tremolo Bar, Noise Gate,
-Sustain, Distort, Overdrive, and Eq Bank.
-Each effect has mono and stereo variants, and controls take effect at host
-block boundaries.
+Sustain, Distort, Overdrive, Eq Bank, Delay, and Echo. Each effect has mono
+and stereo variants. Delay and Echo also have dedicated mono-to-stereo
+variants. Controls take effect at host block boundaries.
 
 - Digital Amp and Tremolo use the same calculations as the standalone app
   directly on normalized LV2 audio.
@@ -33,6 +33,15 @@ block boundaries.
   the host sample rate and maintain separate histories for each channel.
   At low sample rates, bands whose upper edge reaches the oversampled
   Nyquist frequency are skipped.
+- Delay supports up to 10 repeats spaced up to 10 seconds apart. Its
+  mono-to-stereo version puts the dry input on the left and alternates
+  repeats between right and left.
+- Echo uses four possible prime-ratio feedback voices. Its stereo version
+  keeps channels independent, and its mono-to-stereo version sends dry
+  audio to both outputs and distributes the feedback voices between them.
+  Delay and Echo allocate their full history when the host creates an
+  instance. Parameter changes during playback reuse the existing history.
+  Delay and Echo support host rates up to 384 kHz.
 
 ## Build and test
 

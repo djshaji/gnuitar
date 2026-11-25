@@ -24,9 +24,10 @@
 #define _DELAY_H_ 1
 
 #include "effect.h"
+#include "dsp/delay_echo_dsp.h"
 
-#define MAX_COUNT 10
-#define MAX_SECONDS 10
+#define MAX_COUNT GNUITAR_DELAY_MAX_REPEATS
+#define MAX_SECONDS GNUITAR_DELAY_MAX_SECONDS
 #define MAX_STEP (MAX_SAMPLE_RATE * MAX_SECONDS)
 #define MAX_SIZE (MAX_STEP * (MAX_COUNT + 1))
 

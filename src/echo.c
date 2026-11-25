@@ -121,10 +121,6 @@
 #    include <io.h>
 #endif
 
-#define ECHO_FIRST_PRIME                    20
-#define ECHO_NEXT_PRIME_DISTANCE_FACTOR	    1.6
-#define ECHO_CROSSMIX_ATTN                  10.0
-
 static void
 update_echo_decay(GtkAdjustment *adj, struct echo_params *params)
 {
@@ -147,18 +143,6 @@ static void
 toggle_echo_multichannel(void *bullshit, struct echo_params *params)
 {
     params->multichannel = !params->multichannel;
-}
-
-static int
-is_prime(int n)
-{
-    int             i;
-
-    for (i = 2; i < n; i++)
-	if (n % i == 0)
-	    return 0;
-
-    return 1;
 }
 
 static void
@@ -286,118 +270,40 @@ echo_init(struct effect *p)
 }
     
 static void
-echo_filter_mono(effect_t *p, data_block_t *db)
-{
-    int                 i, count, curr_channel = 0;
-    DSP_SAMPLE          *s, tmp;
-    double              in, out, echo_samples, echo_decay;
-    struct echo_params  *params;
-    int                 delay_lookup[MAX_ECHO_COUNT];
-    float               decay_lookup[MAX_ECHO_COUNT];
-
-    s = db->data;
-    count = db->len;
-
-    params = p->params;
-
-    echo_samples = params->echo_size / 1000.0 * sample_rate;
-    echo_decay = params->echo_decay / 100.0;
-    
-    for (i = 0; i < params->echoes; i += 1) {
-	delay_lookup[i]   = echo_samples * params->size_factor[i];
-	decay_lookup[i]   = pow(echo_decay, params->decay_factor[i]);
-    }
-    while (count) {
-        /* mix current input into the various echo buffers at their
-         * expected delays */
-        in = *s;
-        out = in;
-        for (i = 0; i < params->echoes; i += 1) {
-	    tmp = params->history[curr_channel][i]->get(params->history[curr_channel][i], delay_lookup[i]) * decay_lookup[i];
-            out += tmp;
-            if (params->echoes > 1) {
-                if (i > 1)
-                    tmp += params->history[0][i-1]->get(params->history[0][i-1], delay_lookup[i-1]) * decay_lookup[i-1] / ECHO_CROSSMIX_ATTN;
-                else
-                    tmp += params->history[0][params->echoes-1]->get(params->history[0][params->echoes-1], delay_lookup[params->echoes-1]) * decay_lookup[params->echoes-1] / ECHO_CROSSMIX_ATTN;
-            }
-            params->history[curr_channel][i]->add(params->history[curr_channel][i], in + tmp);
-        }
-        *s = out;
-        
-        curr_channel = (curr_channel + 1) % db->channels; 
-        s++;
-        count--;
-    }
-}
-
-static void
-echo_filter_mc(effect_t *p, data_block_t *db)
-{
-    int                 i, count, curr_channel = 0;
-    DSP_SAMPLE          *ins, *outs, tmp;
-    double              in, out, echo_samples, echo_decay;
-    struct echo_params  *params;
-    int                 delay_lookup[MAX_ECHO_COUNT];
-    float               decay_lookup[MAX_ECHO_COUNT];
-
-    assert(db->channels == 1);
-    ins = db->data;
-    outs = db->data_swap;
-    db->data = outs;
-    db->data_swap = ins;
-    
-    count = db->len;
-    
-    params = p->params;
-    echo_samples = params->echo_size / 1000.0 * sample_rate;
-    echo_decay = params->echo_decay / 100.0;
-    
-    db->channels = n_output_channels;
-    db->len *= n_output_channels;
-    
-    for (i = 0; i < params->echoes; i += 1) {
-	delay_lookup[i]   = echo_samples * params->size_factor[i];
-	decay_lookup[i]   = pow(echo_decay, params->decay_factor[i]);
-    }
-    
-    while (count) {
-        /* echo buffers are equally divided with all output channels.
-	 * otherwise the algorithm is the same. */
-        in = *ins++;
-        for (curr_channel = 0; curr_channel < db->channels; curr_channel += 1) {
-            out = in;
-            
-	    /* this for loop distributes channels equally between voices */
-            for (i = curr_channel; i < params->echoes; i += db->channels) {
-                tmp = params->history[0][i]->get(params->history[0][i], delay_lookup[i]) * decay_lookup[i];
-                out += tmp;
-	
-                /* do some cross-mixing */        
-                if (params->echoes > 1) {
-                    if (i > 1)
-                        tmp += params->history[0][i-1]->get(params->history[0][i-1], delay_lookup[i-1]) * decay_lookup[i-1] / ECHO_CROSSMIX_ATTN;
-                    else
-                        tmp += params->history[0][params->echoes-1]->get(params->history[0][params->echoes-1], delay_lookup[params->echoes-1]) * decay_lookup[params->echoes-1] / ECHO_CROSSMIX_ATTN;
-                }
-                params->history[0][i]->add(params->history[0][i], in + tmp);
-            }
-
-            *outs++ = out;
-        }
-        
-        count--;
-    }
-}
-
-static void
 echo_filter(effect_t *p, data_block_t *db)
 {
     struct echo_params *params = p->params;
+    int voices = params->echoes;
+    EchoTaps taps;
+    DSP_SAMPLE *input = db->data;
+    int frame, channel;
+
+    if (voices < 0)
+        voices = 0;
+    if (voices > MAX_ECHO_COUNT)
+        voices = MAX_ECHO_COUNT;
+    taps = gnuitar_echo_taps(sample_rate, params->echo_size, params->echo_decay, voices);
+
     if (params->multichannel && db->channels == 1 && n_output_channels > 1) {
-        echo_filter_mc(p, db);
+        DSP_SAMPLE *output = db->data_swap;
+        for (frame = 0; frame < db->len; ++frame) {
+            for (channel = 0; channel < n_output_channels; ++channel) {
+                *output++ = gnuitar_echo_channel(params->history[0], params->history[0],
+                                                 input[frame], &taps, channel, n_output_channels);
+            }
+        }
+        db->channels = n_output_channels;
+        db->len *= n_output_channels;
+        db->data = db->data_swap;
+        db->data_swap = input;
     } else {
-        echo_filter_mono(p, db);
+        for (frame = 0; frame < db->len / db->channels; ++frame) {
+            for (channel = 0; channel < db->channels; ++channel) {
+                DSP_SAMPLE *sample = input + frame * db->channels + channel;
+                *sample = gnuitar_echo_channel(params->history[channel], params->history[0],
+                                               *sample, &taps, 0, 1);
+            }
+        }
     }
 }
 
@@ -415,6 +321,7 @@ echo_done(struct effect *p)
     }
 
     gtk_widget_destroy(p->control);
+    free(params);
     free(p);
 }
 
@@ -445,7 +352,7 @@ echo_create()
 {
     effect_t       *p;
     struct echo_params *params;
-    int             i, j, k;
+    int             i, j;
 
     p = calloc(1, sizeof(effect_t));
     p->params = calloc(1, sizeof(*params));
@@ -462,25 +369,9 @@ echo_create()
     params->echo_decay = 30.0;
     params->echoes = MAX_ECHO_COUNT;
 
-    /* find some primes to base echo times on */
-    k = ECHO_FIRST_PRIME;
-    for (i = 0; i < MAX_ECHO_COUNT; i += 1) {
-	while (! is_prime(k))
-	    k += 1;
-        params->primes[i] = k;
-        k *= ECHO_NEXT_PRIME_DISTANCE_FACTOR;
-    }
-    /* scale primes such that largest value is 1.0 in both */
-    for (i = 0; i < MAX_ECHO_COUNT; i += 1) {
-        params->size_factor[i] = params->primes[i] / params->primes[0];
-        params->decay_factor[i] = params->primes[i] / params->primes[0];
-    }
-    /* build history buffers, one per channel per echo */
-    /* with 20 voices, 0.5 s max buffer, 48 kHz sample rate
-     * and 4 bytes per sample we need approx. 1 MB */
     for (i = 0; i < MAX_ECHO_COUNT; i += 1) {
         for (j = 0; j < MAX_CHANNELS; j += 1) {
-            params->history[j][i] = new_Backbuf(MAX_ECHO_LENGTH / 1000.0 * MAX_SAMPLE_RATE * params->size_factor[i]);
+            params->history[j][i] = new_Backbuf(MAX_ECHO_LENGTH / 1000.0 * MAX_SAMPLE_RATE * gnuitar_echo_ratio(i));
         }
     }
     return p;
