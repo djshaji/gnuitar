@@ -195,3 +195,287 @@ gt:tremolo-stereo
         lv2:maximum 100.0 ;
         units:unit units:pc
     ] .
+
+gt:tremolo-bar-mono
+    a lv2:Plugin , lv2:ModulatorPlugin ;
+    doap:name "GNUitar Tremolo Bar (Mono)" ;
+    doap:license <COPYING> ;
+    lv2:minorVersion 0 ;
+    lv2:microVersion 1 ;
+    lv2:port
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 0 ;
+        lv2:symbol "in" ;
+        lv2:name "Input"
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 1 ;
+        lv2:symbol "out" ;
+        lv2:name "Output"
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 2 ;
+        lv2:symbol "period_ms" ;
+        lv2:name "Period" ;
+        lv2:default 200.0 ;
+        lv2:minimum 50.0 ;
+        lv2:maximum 3000.0 ;
+        units:unit units:ms
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 3 ;
+        lv2:symbol "depth_hz" ;
+        lv2:name "Depth" ;
+        lv2:default 10.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 50.0 ;
+        units:unit units:hz
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 4 ;
+        lv2:symbol "base_hz" ;
+        lv2:name "Base" ;
+        lv2:default 0.0 ;
+        lv2:minimum -50.0 ;
+        lv2:maximum 50.0 ;
+        units:unit units:hz
+    ] .
+
+gt:tremolo-bar-stereo
+    a lv2:Plugin , lv2:ModulatorPlugin ;
+    doap:name "GNUitar Tremolo Bar (Stereo)" ;
+    doap:license <COPYING> ;
+    lv2:minorVersion 0 ;
+    lv2:microVersion 1 ;
+    pg:mainInput gt:stereo-input ;
+    pg:mainOutput gt:stereo-output ;
+    lv2:port
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 0 ;
+        lv2:symbol "in_l" ;
+        lv2:name "Input Left" ;
+        pg:group gt:stereo-input ;
+        lv2:designation pg:left
+    ],
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 1 ;
+        lv2:symbol "in_r" ;
+        lv2:name "Input Right" ;
+        pg:group gt:stereo-input ;
+        lv2:designation pg:right
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 2 ;
+        lv2:symbol "out_l" ;
+        lv2:name "Output Left" ;
+        pg:group gt:stereo-output ;
+        lv2:designation pg:left
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 3 ;
+        lv2:symbol "out_r" ;
+        lv2:name "Output Right" ;
+        pg:group gt:stereo-output ;
+        lv2:designation pg:right
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 4 ;
+        lv2:symbol "period_ms" ;
+        lv2:name "Period" ;
+        lv2:default 200.0 ;
+        lv2:minimum 50.0 ;
+        lv2:maximum 3000.0 ;
+        units:unit units:ms
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 5 ;
+        lv2:symbol "depth_hz" ;
+        lv2:name "Depth" ;
+        lv2:default 10.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 50.0 ;
+        units:unit units:hz
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 6 ;
+        lv2:symbol "base_hz" ;
+        lv2:name "Base" ;
+        lv2:default 0.0 ;
+        lv2:minimum -50.0 ;
+        lv2:maximum 50.0 ;
+        units:unit units:hz
+    ] .
+
+gt:noise-gate-mono
+    a lv2:Plugin , lv2:GatePlugin ;
+    doap:name "GNUitar Noise Gate (Mono)" ;
+    doap:license <COPYING> ;
+    lv2:minorVersion 0 ;
+    lv2:microVersion 1 ;
+    lv2:port
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 0 ;
+        lv2:symbol "in" ;
+        lv2:name "Input"
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 1 ;
+        lv2:symbol "out" ;
+        lv2:name "Output"
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 2 ;
+        lv2:symbol "threshold_pct" ;
+        lv2:name "Opening Threshold" ;
+        lv2:default 50.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 100.0 ;
+        units:unit units:pc
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 3 ;
+        lv2:symbol "hysteresis_pct" ;
+        lv2:name "Closing Threshold" ;
+        lv2:default 41.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 100.0 ;
+        units:unit units:pc
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 4 ;
+        lv2:symbol "attack_ms" ;
+        lv2:name "Attack" ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 4000.0 ;
+        units:unit units:ms
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 5 ;
+        lv2:symbol "hold_ms" ;
+        lv2:name "Hold" ;
+        lv2:default 2.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 200.0 ;
+        units:unit units:ms
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 6 ;
+        lv2:symbol "release_ms" ;
+        lv2:name "Release" ;
+        lv2:default 500.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 15000.0 ;
+        units:unit units:ms
+    ] .
+
+gt:noise-gate-stereo
+    a lv2:Plugin , lv2:GatePlugin ;
+    doap:name "GNUitar Noise Gate (Stereo)" ;
+    doap:license <COPYING> ;
+    lv2:minorVersion 0 ;
+    lv2:microVersion 1 ;
+    pg:mainInput gt:stereo-input ;
+    pg:mainOutput gt:stereo-output ;
+    lv2:port
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 0 ;
+        lv2:symbol "in_l" ;
+        lv2:name "Input Left" ;
+        pg:group gt:stereo-input ;
+        lv2:designation pg:left
+    ],
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 1 ;
+        lv2:symbol "in_r" ;
+        lv2:name "Input Right" ;
+        pg:group gt:stereo-input ;
+        lv2:designation pg:right
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 2 ;
+        lv2:symbol "out_l" ;
+        lv2:name "Output Left" ;
+        pg:group gt:stereo-output ;
+        lv2:designation pg:left
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 3 ;
+        lv2:symbol "out_r" ;
+        lv2:name "Output Right" ;
+        pg:group gt:stereo-output ;
+        lv2:designation pg:right
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 4 ;
+        lv2:symbol "threshold_pct" ;
+        lv2:name "Opening Threshold" ;
+        lv2:default 50.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 100.0 ;
+        units:unit units:pc
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 5 ;
+        lv2:symbol "hysteresis_pct" ;
+        lv2:name "Closing Threshold" ;
+        lv2:default 41.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 100.0 ;
+        units:unit units:pc
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 6 ;
+        lv2:symbol "attack_ms" ;
+        lv2:name "Attack" ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 4000.0 ;
+        units:unit units:ms
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 7 ;
+        lv2:symbol "hold_ms" ;
+        lv2:name "Hold" ;
+        lv2:default 2.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 200.0 ;
+        units:unit units:ms
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 8 ;
+        lv2:symbol "release_ms" ;
+        lv2:name "Release" ;
+        lv2:default 500.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 15000.0 ;
+        units:unit units:ms
+    ] .

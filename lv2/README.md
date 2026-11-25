@@ -1,11 +1,20 @@
-# GNUitar LV2 pilot
+# GNUitar LV2 plugins
 
-This Linux bundle provides GNUitar Digital Amp and Tremolo, each in mono and
-stereo. Host-generated controls expose gain in dB, and Tremolo period in
-milliseconds and depth in percent. Controls are applied at host block
-boundaries. The standalone app and LV2 share the original gain and modulation
-calculations. Both effects multiply samples by gain, so the legacy fixed-scale
-conversion cancels out for normalized LV2 audio.
+The Linux bundle provides Digital Amp, Tremolo, Tremolo Bar, and Noise Gate.
+Each effect has mono and stereo variants, and controls take effect at host
+block boundaries.
+
+- Digital Amp and Tremolo use the same calculations as the standalone app
+  directly on normalized LV2 audio.
+- Tremolo Bar uses GNUitar's Hilbert frequency shifter. Its period is in
+  milliseconds, and its depth and base shift are in Hz. Both channels use
+  the same oscillator phases and have separate filter histories.
+- Noise Gate uses a linked peak detector in stereo. Opening and closing
+  thresholds use the legacy 0–100 scale. Each percentage point is 10
+  counts of a signed 16-bit signal, so the default opening threshold of 50%
+  corresponds to about −36.3 dBFS. The closing threshold is limited to the
+  opening threshold. Attack, hold and release are in milliseconds, with
+  linear gain ramps and a gate that starts closed.
 
 ## Build and test
 
@@ -31,7 +40,5 @@ cmake -S lv2 -B build-lv2 -DGNUITAR_LV2_INSTALL_DIR="$HOME/.lv2"
 cmake --install build-lv2
 ```
 
-The Amp stages channel inputs before writing outputs, and Tremolo advances the
-oscillator once per frame. Each Tremolo instance owns its phase and sine
-table. It resets phase on activation. The plugin library has no GTK,
-sound-device, or Lilv dependency.
+The plugins support in-place processing and reset their DSP state on
+activation. The library has no GTK, sound-device, or Lilv dependency.

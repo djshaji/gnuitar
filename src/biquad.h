@@ -193,7 +193,10 @@
 #define _BIQUAD_H_ 1
 
 #include "audio-driver.h"
+#include <math.h>
+#ifdef _WIN32
 #include "utils.h"
+#endif
 
 /* SSE is used to compute convolutions and the biquad summation. */
 #ifdef __SSE__

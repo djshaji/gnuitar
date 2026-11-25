@@ -307,49 +307,28 @@ vibrato_init(struct effect *p)
 static void
 vibrato_filter(struct effect *p, data_block_t *db)
 {
-    DSP_SAMPLE     *s;
-    int             count;
-    int		    curr_channel = 0;
-    struct vibrato_params *vp;
+    struct vibrato_params *vp = p->params;
+    DSP_SAMPLE *samples = db->data;
+    double sweep_step;
+    int frame, channel;
 
-    s = db->data;
-    count = db->len;
+    if (!(vp->vibrato_speed > 0.0f) || !sample_rate)
+        return;
+    sweep_step = 1000.0 / vp->vibrato_speed / sample_rate;
 
-    vp = p->params;
-
-    /* the vibrato effect is based on hilbert transform that allows us to reconstruct
-     * shifted frequency spectra. However, the shifting effect does not preserve
-     * frequency relationships because it implements f' = f - f_mod. On the other
-     * hand, neither does the genuine guitar tremolo bar, so there is some emulation
-     * accuracy.
-     *
-     * The f_mod is the speed of modulation, stored in variables speed. The speed
-     * itself is modulated by the period and depth parameters. */
-    
-    while (count) {
-        DSP_SAMPLE x0, x1;
-        float sinval, cosval;
-        hilbert_transform(*s, &x0, &x1, &vp->hilbert, curr_channel);
-        
-        sinval = sin_lookup(vp->phase);
-        cosval = cos_lookup(vp->phase);
-        if (vp->vibrato_base > 0)
-            *s = cosval * x0 + sinval * x1;
-        else
-            *s = cosval * x0 - sinval * x1;
-        
-        curr_channel = (curr_channel + 1) % db->channels;
-	if (curr_channel == 0) {
-	    vp->vibrato_phase += 1000.0 / vp->vibrato_speed / sample_rate;
-            if (vp->vibrato_phase >= 1.0)
-                vp->vibrato_phase -= 1.0;
-	    vp->phase += (fabs(vp->vibrato_base) + (vp->vibrato_amplitude + sin_lookup(vp->vibrato_phase) * vp->vibrato_amplitude) / 2) / sample_rate;
-            if (vp->phase >= 1.0)
-                vp->phase -= 1.0;
+    for (frame = 0; frame < db->len / db->channels; ++frame) {
+        float sine = gnuitar_vibrato_sine(sin_lookup_table, SIN_LOOKUP_SIZE,
+                                          vp->dsp.shift_phase);
+        float cosine = (DSP_SAMPLE) gnuitar_vibrato_cosine(sin_lookup_table, SIN_LOOKUP_SIZE,
+                                              vp->dsp.shift_phase);
+        for (channel = 0; channel < db->channels; ++channel) {
+            *samples = gnuitar_vibrato_sample(&vp->dsp, *samples, channel,
+                                              sine, cosine, vp->vibrato_base);
+            ++samples;
         }
-
-	s++;
-	count--;
+        gnuitar_vibrato_advance(&vp->dsp, sin_lookup_table, SIN_LOOKUP_SIZE,
+                               sweep_step, sample_rate, vp->vibrato_amplitude,
+                               vp->vibrato_base);
     }
 }
 
@@ -397,11 +376,10 @@ vibrato_create()
     p->proc_save = vibrato_save;
 
     pvibrato = p->params;
-    hilbert_init(&pvibrato->hilbert);
+    hilbert_init(&pvibrato->dsp.hilbert);
     pvibrato->vibrato_base = 0;
     pvibrato->vibrato_amplitude = 10;
     pvibrato->vibrato_speed = 200;
-    pvibrato->vibrato_phase = 0;
 
     return p;
 }

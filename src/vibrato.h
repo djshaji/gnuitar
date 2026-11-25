@@ -24,18 +24,15 @@
 #define _VIBRATO_H_ 1
 
 #include "effect.h"
-#include "biquad.h"
+#include "dsp/vibrato_dsp.h"
 
 #define MAX_VIBRATO_BUFSIZE 16384
 
 effect_t *   vibrato_create(void);
 
 struct vibrato_params {
-    Hilbert_t       hilbert;
-    float           vibrato_amplitude, vibrato_base,
-       		    vibrato_speed,
-                    vibrato_phase,
-                    phase;
+    VibratoDSP     dsp;
+    float          vibrato_amplitude, vibrato_base, vibrato_speed;
 };
 
 #endif

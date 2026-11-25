@@ -22,3 +22,23 @@ gt:tremolo-stereo
     a lv2:Plugin ;
     lv2:binary <gnuitar.so> ;
     rdfs:seeAlso <gnuitar.ttl> .
+
+gt:tremolo-bar-mono
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
+
+gt:tremolo-bar-stereo
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
+
+gt:noise-gate-mono
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
+
+gt:noise-gate-stereo
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
