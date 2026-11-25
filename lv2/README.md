@@ -130,3 +130,17 @@ tar -xzf gnuitar-lv2-linux-x86_64-*.tar.gz -C "$HOME/.lv2"
 ```
 
 Restart your LV2 host or rescan its plugins after installing the bundle.
+
+## Prepare a GitHub release
+
+Run the [LV2 validation workflow](https://github.com/djshaji/gnuitar/actions/workflows/lv2.yml)
+on the default branch and enter a tag such as `lv2-v0.1.0` in
+`release_tag`. A successful run creates a GitHub release draft with
+the tested Linux archive attached and the selected commit as its
+target. The tag is created when the draft is published.
+
+Install the archive attached to the draft for the DAW smoke test.
+Check plugin discovery, mono and stereo routing, control automation,
+and session save and reopen in Ardour or Carla. Check the Tuner's
+readout on a guitar or bass DI and audition both Tube Amplifier
+cabinets. Publish the draft from GitHub Releases once these checks pass.

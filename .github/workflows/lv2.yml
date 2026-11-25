@@ -1,6 +1,13 @@
 name: LV2 validation
 
-on: [pull_request, workflow_dispatch]
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Tag for a GitHub release draft (e.g. lv2-v0.1.0). Leave blank to build only.
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -81,3 +88,49 @@ jobs:
           path: dist/*.tar.gz
           if-no-files-found: error
           compression-level: 0
+
+  linux-release-draft:
+    name: Prepare GitHub release draft
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref_type == 'branch' &&
+      github.ref_name == github.event.repository.default_branch &&
+      inputs.release_tag != ''
+    needs: linux-release-candidate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: lv2-release-${{ inputs.release_tag }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: gnuitar-lv2-linux-x86_64
+          path: dist
+      - name: Create a draft with the validated tarball
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^lv2-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Use a tag such as lv2-v0.1.0."
+            exit 1
+          fi
+          archive="dist/gnuitar-lv2-linux-x86_64-${GITHUB_SHA:0:12}.tar.gz"
+          test -s "$archive"
+
+          tags=$(gh api "repos/$GH_REPO/git/matching-refs/tags/$RELEASE_TAG" --jq '.[].ref')
+          if grep -Fxq "refs/tags/$RELEASE_TAG" <<< "$tags"; then
+            echo "::error::The requested release tag already exists."
+            exit 1
+          fi
+
+          gh release create "$RELEASE_TAG" "$archive" \
+            --draft --target "$GITHUB_SHA" \
+            --title "GNUitar LV2 ${RELEASE_TAG#lv2-v}" --notes-file lv2/RELEASE_NOTES.md
