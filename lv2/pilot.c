@@ -489,9 +489,12 @@ static const LV2_Descriptor descriptors[] = {
     {GNUITAR_URI "eq-bank-stereo", instantiate_stereo, connect_port, activate, run_eqbank, NULL, cleanup, NULL},
 };
 
+const LV2_Descriptor *gnuitar_delay_echo_descriptor(uint32_t index);
+
 LV2_SYMBOL_EXPORT
 const LV2_Descriptor *
 lv2_descriptor(uint32_t index)
 {
-    return index < sizeof(descriptors) / sizeof(descriptors[0]) ? &descriptors[index] : NULL;
+    const uint32_t count = sizeof(descriptors) / sizeof(descriptors[0]);
+    return index < count ? &descriptors[index] : gnuitar_delay_echo_descriptor(index - count);
 }

@@ -723,6 +723,104 @@ test_eqbank_low_rate(const LV2_Descriptor *descriptor, uint32_t channels,
     descriptor->cleanup(plugin.handle);
 }
 
+static void
+test_delay_echo(const LV2_Descriptor *descriptor, const char *path, double rate,
+                uint32_t inputs, uint32_t outputs, bool echo)
+{
+    enum { count = 1024 };
+    const LV2_Feature *const features[] = {NULL};
+    LV2_Handle handle = descriptor->instantiate(descriptor, rate, path, features);
+    bool spread = inputs != outputs;
+    uint32_t control = inputs + outputs;
+    float settings[] = {1.0f, 50.0f, echo ? 2.0f : 3.0f};
+    float left[count] = {0.5f}, right[count] = {0};
+    float out_l[count], out_r[count];
+    uint32_t first, second, offset, block;
+
+    CHECK(handle);
+    descriptor->connect_port(handle, control, &settings[0]);
+    descriptor->connect_port(handle, control + 1, &settings[1]);
+    descriptor->connect_port(handle, control + 2, &settings[2]);
+    descriptor->connect_port(handle, 0, left);
+    if (inputs == 2)
+        descriptor->connect_port(handle, 1, right);
+    descriptor->connect_port(handle, inputs, out_l);
+    if (outputs == 2)
+        descriptor->connect_port(handle, inputs + 1, out_r);
+
+    descriptor->activate(handle);
+    out_l[0] = 42.0f;
+    descriptor->run(handle, 0);
+    CHECK(out_l[0] == 42.0f);
+    descriptor->run(handle, count);
+    check_audio(out_l[0], 0.5f);
+    if (outputs == 2)
+        check_audio(out_r[0], echo && spread ? 0.5f : 0.0f);
+
+    first = (uint32_t) (rate / 1000.0);
+    if (echo) {
+        float second_gain = (float) pow(0.5, 37.0 / 23.0);
+
+        /* Echo reads before writing, so the stored input is one frame older. */
+        ++first;
+        second = (uint32_t) (rate / 1000.0 * (37.0 / 23.0)) + 1;
+        check_audio(out_l[first], 0.25f);
+        check_audio(spread ? out_r[second] : out_l[second], 0.5f * second_gain);
+        check_audio(out_l[2 * first], 0.125f);
+        check_audio(out_l[first + second], 0.5f * second_gain / 10.0f * 0.5f);
+    } else if (spread) {
+        check_audio(out_r[first], 0.25f);
+        check_audio(out_l[2 * first], 0.125f);
+        check_audio(out_r[3 * first], 0.0625f);
+        CHECK(out_l[first] == 0.0f);
+    } else {
+        check_audio(out_l[first + 1], 0.25f);
+        check_audio(out_l[2 * first + 1], 0.125f);
+        check_audio(out_l[3 * first + 1], 0.0625f);
+        CHECK(out_l[first] == 0.0f);
+    }
+    if (inputs == 2) {
+        for (offset = 0; offset < count; ++offset)
+            CHECK(out_r[offset] == 0.0f);
+    }
+
+    descriptor->activate(handle);
+    offset = 0;
+    block = 0;
+    while (offset < count) {
+        const uint32_t sizes[] = {0, 1, 37, 2, 63, 128};
+        uint32_t frames = sizes[block++ % (sizeof(sizes) / sizeof(sizes[0]))];
+        if (frames > count - offset)
+            frames = count - offset;
+        descriptor->connect_port(handle, 0, left + offset);
+        if (inputs == 2)
+            descriptor->connect_port(handle, 1, right + offset);
+        descriptor->connect_port(handle, inputs, (outputs == 2 ? right : left) + offset);
+        if (outputs == 2)
+            descriptor->connect_port(handle, inputs + 1, left + offset);
+        descriptor->run(handle, frames);
+        offset += frames;
+    }
+    CHECK(memcmp(outputs == 2 ? right : left, out_l, sizeof(out_l)) == 0);
+    if (outputs == 2)
+        CHECK(memcmp(left, out_r, sizeof(out_r)) == 0);
+
+    /* The longest legal tap fits the allocated ring at this sample rate. */
+    settings[0] = echo ? 500.0f : 10000.0f;
+    settings[2] = echo ? 4.0f : 10.0f;
+    descriptor->connect_port(handle, 0, left);
+    if (inputs == 2)
+        descriptor->connect_port(handle, 1, right);
+    descriptor->connect_port(handle, inputs, out_l);
+    if (outputs == 2)
+        descriptor->connect_port(handle, inputs + 1, out_r);
+    descriptor->run(handle, 1);
+    CHECK(isfinite(out_l[0]));
+    if (outputs == 2)
+        CHECK(isfinite(out_r[0]));
+    descriptor->cleanup(handle);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -735,6 +833,8 @@ main(int argc, char **argv)
         URI_PREFIX "distort-mono", URI_PREFIX "distort-stereo",
         URI_PREFIX "overdrive-mono", URI_PREFIX "overdrive-stereo",
         URI_PREFIX "eq-bank-mono", URI_PREFIX "eq-bank-stereo",
+        URI_PREFIX "delay-mono", URI_PREFIX "delay-stereo", URI_PREFIX "delay-mono-to-stereo",
+        URI_PREFIX "echo-mono", URI_PREFIX "echo-stereo", URI_PREFIX "echo-mono-to-stereo",
     };
     const LV2_Descriptor *(*get_descriptor)(uint32_t);
     void *library;
@@ -763,6 +863,14 @@ main(int argc, char **argv)
         const LV2_Descriptor *descriptor = get_descriptor(i);
         uint32_t channels = i % 2 + 1;
         CHECK(descriptor && strcmp(descriptor->URI, uris[i]) == 0);
+        if (i >= 16) {
+            uint32_t layout = (i - 16) % 3;
+            test_delay_echo(descriptor, bundle_path, 44100.0,
+                            layout == 1 ? 2 : 1, layout == 0 ? 1 : 2, i >= 19);
+            test_delay_echo(descriptor, bundle_path, 96000.0,
+                            layout == 1 ? 2 : 1, layout == 0 ? 1 : 2, i >= 19);
+            continue;
+        }
         if (i < 2) {
             Plugin plugin = open_plugin(descriptor, channels, 48000.0, bundle_path);
             test_amp(plugin);

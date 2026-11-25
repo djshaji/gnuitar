@@ -82,3 +82,33 @@ gt:eq-bank-stereo
     a lv2:Plugin ;
     lv2:binary <gnuitar.so> ;
     rdfs:seeAlso <gnuitar.ttl> .
+
+gt:delay-mono
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
+
+gt:delay-stereo
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
+
+gt:delay-mono-to-stereo
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
+
+gt:echo-mono
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
+
+gt:echo-stereo
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
+
+gt:echo-mono-to-stereo
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
