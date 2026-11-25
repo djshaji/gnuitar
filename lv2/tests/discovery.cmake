@@ -4,8 +4,8 @@ execute_process(COMMAND "${LV2LS}" OUTPUT_VARIABLE available OUTPUT_STRIP_TRAILI
     COMMAND_ERROR_IS_FATAL ANY)
 string(REPLACE "\n" ";" discovered "${available}")
 list(LENGTH discovered count)
-if(NOT count EQUAL 35)
-    message(FATAL_ERROR "Expected exactly thirty-five plugins, found: ${discovered}")
+if(NOT count EQUAL 37)
+    message(FATAL_ERROR "Expected exactly thirty-seven plugins, found: ${discovered}")
 endif()
 
 function(check_ports effect layout)
@@ -62,3 +62,5 @@ check_ports(autowah mono in out sweep_ms low_hz high_hz resonance_pct wet_pct mo
 check_ports(autowah stereo in_l in_r out_l out_r sweep_ms low_hz high_hz resonance_pct wet_pct mode model pedal_position)
 check_ports(pitch-shift mono in out semitones fine_cents wet_pct latency)
 check_ports(pitch-shift stereo in_l in_r out_l out_r semitones fine_cents wet_pct latency)
+check_ports(tube-amplifier mono in out stages gain_db bias_factor asymmetry cabinet quality bass_db middle_db treble_db)
+check_ports(tube-amplifier stereo in_l in_r out_l out_r stages gain_db bias_factor asymmetry cabinet quality bass_db middle_db treble_db)

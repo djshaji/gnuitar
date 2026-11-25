@@ -2,7 +2,7 @@
 
 The Linux bundle provides Digital Amp, Tremolo, Tremolo Bar, Noise Gate,
 Sustain, Distort, Overdrive, Eq Bank, Delay, Echo, Reverb, Chorus / Flanger,
-Phaser, Rotary Speaker, Autowah, and Pitch Shift. All effects except Rotary
+Phaser, Rotary Speaker, Autowah, Pitch Shift, and Tube Amplifier. All effects except Rotary
 Speaker have mono and stereo variants. Delay, Echo, Chorus / Flanger, Phaser,
 and Rotary Speaker have mono-to-stereo variants. Controls are read at host
 block boundaries.
@@ -68,6 +68,13 @@ block boundaries.
   At unity pitch, the wet and dry paths are identical. Transposition can
   spread transients around the nominal alignment. The combined coarse
   and fine settings are capped at the legacy range of −24 to +12 semitones.
+
+- Tube Amplifier uses six-times oversampled nonlinear stages, independent
+  channel bias histories, and the two embedded cabinet models at four
+  convolution lengths. The coefficients are resampled from 44.1 kHz,
+  the rate required by the original WAV-to-coefficients script. The source
+  WAVs and a separate recording provenance record are absent from the
+  repository.
 
 ## Build and test
 

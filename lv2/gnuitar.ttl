@@ -2580,3 +2580,253 @@ gt:pitch-shift-stereo
         lv2:portProperty lv2:integer ;
         units:unit units:frame
     ] .
+
+gt:tube-amplifier-mono
+    a lv2:Plugin , lv2:SimulatorPlugin , lv2:DistortionPlugin ;
+    doap:name "GNUitar Tube Amplifier (Mono)" ;
+    doap:license <COPYING> ;
+    lv2:minorVersion 0 ;
+    lv2:microVersion 1 ;
+    lv2:port
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 0 ;
+        lv2:symbol "in" ;
+        lv2:name "Input"
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 1 ;
+        lv2:symbol "out" ;
+        lv2:name "Output"
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 2 ;
+        lv2:symbol "stages" ;
+        lv2:name "Stages" ;
+        lv2:default 4.0 ;
+        lv2:minimum 2.0 ;
+        lv2:maximum 4.0 ;
+        lv2:portProperty lv2:integer
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 3 ;
+        lv2:symbol "gain_db" ;
+        lv2:name "Gain" ;
+        lv2:default 35.0 ;
+        lv2:minimum 30.0 ;
+        lv2:maximum 50.0 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 4 ;
+        lv2:symbol "bias_factor" ;
+        lv2:name "Bias Factor" ;
+        lv2:default -7.0 ;
+        lv2:minimum -25.0 ;
+        lv2:maximum 25.0
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 5 ;
+        lv2:symbol "asymmetry" ;
+        lv2:name "Asymmetry" ;
+        lv2:default -3500.0 ;
+        lv2:minimum -5000.0 ;
+        lv2:maximum 5000.0
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 6 ;
+        lv2:symbol "cabinet" ;
+        lv2:name "Cabinet Model" ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
+        lv2:portProperty lv2:integer , lv2:enumeration ;
+        lv2:scalePoint [ rdfs:label "Marshall G15R" ; rdf:value 0 ],
+        [ rdfs:label "Princeton II" ; rdf:value 1 ]
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 7 ;
+        lv2:symbol "quality" ;
+        lv2:name "Cabinet Quality" ;
+        lv2:default 1.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 3.0 ;
+        lv2:portProperty lv2:integer , lv2:enumeration ;
+        lv2:scalePoint [ rdfs:label "Lowest" ; rdf:value 0 ],
+        [ rdfs:label "Normal" ; rdf:value 1 ],
+        [ rdfs:label "High" ; rdf:value 2 ],
+        [ rdfs:label "Extreme" ; rdf:value 3 ]
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 8 ;
+        lv2:symbol "bass_db" ;
+        lv2:name "Bass" ;
+        lv2:default 3.0 ;
+        lv2:minimum -10.0 ;
+        lv2:maximum 10.0 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 9 ;
+        lv2:symbol "middle_db" ;
+        lv2:name "Middle" ;
+        lv2:default -10.0 ;
+        lv2:minimum -20.0 ;
+        lv2:maximum 0.0 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 10 ;
+        lv2:symbol "treble_db" ;
+        lv2:name "Treble" ;
+        lv2:default 0.0 ;
+        lv2:minimum -10.0 ;
+        lv2:maximum 10.0 ;
+        units:unit units:db
+    ] .
+
+gt:tube-amplifier-stereo
+    a lv2:Plugin , lv2:SimulatorPlugin , lv2:DistortionPlugin ;
+    doap:name "GNUitar Tube Amplifier (Stereo)" ;
+    doap:license <COPYING> ;
+    lv2:minorVersion 0 ;
+    lv2:microVersion 1 ;
+    pg:mainInput gt:stereo-input ;
+    pg:mainOutput gt:stereo-output ;
+    lv2:port
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 0 ;
+        lv2:symbol "in_l" ;
+        lv2:name "Input Left" ;
+        pg:group gt:stereo-input ;
+        lv2:designation pg:left
+    ],
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 1 ;
+        lv2:symbol "in_r" ;
+        lv2:name "Input Right" ;
+        pg:group gt:stereo-input ;
+        lv2:designation pg:right
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 2 ;
+        lv2:symbol "out_l" ;
+        lv2:name "Output Left" ;
+        pg:group gt:stereo-output ;
+        lv2:designation pg:left
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 3 ;
+        lv2:symbol "out_r" ;
+        lv2:name "Output Right" ;
+        pg:group gt:stereo-output ;
+        lv2:designation pg:right
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 4 ;
+        lv2:symbol "stages" ;
+        lv2:name "Stages" ;
+        lv2:default 4.0 ;
+        lv2:minimum 2.0 ;
+        lv2:maximum 4.0 ;
+        lv2:portProperty lv2:integer
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 5 ;
+        lv2:symbol "gain_db" ;
+        lv2:name "Gain" ;
+        lv2:default 35.0 ;
+        lv2:minimum 30.0 ;
+        lv2:maximum 50.0 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 6 ;
+        lv2:symbol "bias_factor" ;
+        lv2:name "Bias Factor" ;
+        lv2:default -7.0 ;
+        lv2:minimum -25.0 ;
+        lv2:maximum 25.0
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 7 ;
+        lv2:symbol "asymmetry" ;
+        lv2:name "Asymmetry" ;
+        lv2:default -3500.0 ;
+        lv2:minimum -5000.0 ;
+        lv2:maximum 5000.0
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 8 ;
+        lv2:symbol "cabinet" ;
+        lv2:name "Cabinet Model" ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
+        lv2:portProperty lv2:integer , lv2:enumeration ;
+        lv2:scalePoint [ rdfs:label "Marshall G15R" ; rdf:value 0 ],
+        [ rdfs:label "Princeton II" ; rdf:value 1 ]
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 9 ;
+        lv2:symbol "quality" ;
+        lv2:name "Cabinet Quality" ;
+        lv2:default 1.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 3.0 ;
+        lv2:portProperty lv2:integer , lv2:enumeration ;
+        lv2:scalePoint [ rdfs:label "Lowest" ; rdf:value 0 ],
+        [ rdfs:label "Normal" ; rdf:value 1 ],
+        [ rdfs:label "High" ; rdf:value 2 ],
+        [ rdfs:label "Extreme" ; rdf:value 3 ]
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 10 ;
+        lv2:symbol "bass_db" ;
+        lv2:name "Bass" ;
+        lv2:default 3.0 ;
+        lv2:minimum -10.0 ;
+        lv2:maximum 10.0 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 11 ;
+        lv2:symbol "middle_db" ;
+        lv2:name "Middle" ;
+        lv2:default -10.0 ;
+        lv2:minimum -20.0 ;
+        lv2:maximum 0.0 ;
+        units:unit units:db
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 12 ;
+        lv2:symbol "treble_db" ;
+        lv2:name "Treble" ;
+        lv2:default 0.0 ;
+        lv2:minimum -10.0 ;
+        lv2:maximum 10.0 ;
+        units:unit units:db
+    ] .

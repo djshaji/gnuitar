@@ -177,3 +177,13 @@ gt:pitch-shift-stereo
     a lv2:Plugin ;
     lv2:binary <gnuitar.so> ;
     rdfs:seeAlso <gnuitar.ttl> .
+
+gt:tube-amplifier-mono
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
+
+gt:tube-amplifier-stereo
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .

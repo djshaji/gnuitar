@@ -329,7 +329,9 @@ convolve(const float *a, const float *b, const int len)
     
     switch (len % 4) {
         case 3: dot += a[len - 3] * b[len - 3];
+                /* fall through */
         case 2: dot += a[len - 2] * b[len - 2];
+                /* fall through */
         case 1: dot += a[len - 1] * b[len - 1];
     }
     
@@ -360,7 +362,9 @@ convolve_aligned (const float *a, const float *b, const int len)
     
     switch (len % 4) {
         case 3: dot += a[len - 3] * b[len - 3];
+                /* fall through */
         case 2: dot += a[len - 2] * b[len - 2];
+                /* fall through */
         case 1: dot += a[len - 1] * b[len - 1];
     }
     

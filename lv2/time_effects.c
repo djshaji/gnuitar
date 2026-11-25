@@ -10,17 +10,18 @@
 #include "dsp/spatial_dsp.h"
 #include "dsp/autowah_dsp.h"
 #include "dsp/pitch_dsp.h"
+#include "dsp/tubeamp_dsp.h"
 
 #define GNUITAR_URI "https://github.com/djshaji/gnuitar#"
 #define SINE_SIZE 65536
 #define LEGACY_FULL_SCALE 8388608.0f
 
-typedef enum { DELAY, ECHO, REVERB, CHORUS, PHASER, ROTARY, AUTOWAH, PITCH } TimeEffectKind;
+typedef enum { DELAY, ECHO, REVERB, CHORUS, PHASER, ROTARY, AUTOWAH, PITCH, TUBEAMP } TimeEffectKind;
 
 typedef struct {
     const float *inputs[2];
     float *outputs[2];
-    const float *controls[8];
+    const float *controls[9];
     Backbuf_t *history[2][GNUITAR_REVERB_LINES];
     float *sine;
     float *latency;
@@ -55,7 +56,8 @@ create(double rate, unsigned int inputs, unsigned int outputs, TimeEffectKind ki
     unsigned int channel, line;
 
     if (!isfinite(rate) || rate < 1.0 || rate > 384000.0 ||
-        (kind == PITCH && rate < GNUITAR_PITCH_MIN_RATE))
+        (kind == PITCH && rate < GNUITAR_PITCH_MIN_RATE) ||
+        (kind == TUBEAMP && rate < GNUITAR_TUBE_MIN_RATE))
         return NULL;
 
     self = calloc(1, sizeof(*self));
@@ -67,7 +69,7 @@ create(double rate, unsigned int inputs, unsigned int outputs, TimeEffectKind ki
     self->outputs_count = outputs;
     self->lines = kind == ECHO ? GNUITAR_ECHO_MAX_VOICES
                 : kind == REVERB ? GNUITAR_REVERB_LINES
-                : kind == PHASER || kind == ROTARY || kind == PITCH ? 0 : 1;
+                : kind == PHASER || kind == ROTARY || kind == PITCH || kind == TUBEAMP ? 0 : 1;
     self->num_controls = kind == CHORUS ? 6 : 3;
     if (kind == PHASER || kind == ROTARY) {
         size_t size = kind == PHASER ? sizeof(PhaserDSP) : sizeof(RotaryDSP);
@@ -95,6 +97,15 @@ create(double rate, unsigned int inputs, unsigned int outputs, TimeEffectKind ki
             return NULL;
         }
         gnuitar_pitch_reset(self->pitch, rate);
+    }
+    if (kind == TUBEAMP) {
+        self->num_controls = 9;
+        if (posix_memalign(&self->dsp, 16, sizeof(TubeAmpDSP))) {
+            cleanup(self);
+            return NULL;
+        }
+        gnuitar_tube_prepare(self->dsp, rate);
+        gnuitar_tube_reset(self->dsp);
     }
     if (kind == CHORUS) {
         self->sine = malloc((SINE_SIZE + 1) * sizeof(*self->sine));
@@ -170,6 +181,8 @@ activate(LV2_Handle handle)
         gnuitar_rotary_reset(self->dsp, self->rate);
     if (self->kind == AUTOWAH)
         memset(self->dsp, 0, sizeof(AutowahDSP));
+    if (self->kind == TUBEAMP)
+        gnuitar_tube_reset(self->dsp);
     for (channel = 0; channel < self->inputs_count; ++channel) {
         for (line = 0; line < self->lines; ++line) {
             Backbuf_t *history = self->history[channel][line];
@@ -405,6 +418,34 @@ run_pitch(LV2_Handle handle, uint32_t frames)
     }
 }
 
+static void
+run_tubeamp(LV2_Handle handle, uint32_t frames)
+{
+    TimeEffect *self = handle;
+    TubeAmpDSP *state = self->dsp;
+    TubeAmpControls settings = {
+        .stages = (int) lround(control(self->controls[0], 4, 2, 4)),
+        .gain = (float) pow(10.0, control(self->controls[1], 35, 30, 50) / 20.0),
+        .biasfactor = control(self->controls[2], -7, -25, 25),
+        .asymmetry = control(self->controls[3], -3500, -5000, 5000),
+        .model = (int) lround(control(self->controls[4], 0, 0, GNUITAR_TUBE_MODELS - 1)),
+        .quality = (int) lround(control(self->controls[5], 1, 0, GNUITAR_TUBE_QUALITIES - 1)),
+    };
+    unsigned int frame, channel;
+
+    gnuitar_tube_tone(state, control(self->controls[6], 3, -10, 10),
+                      control(self->controls[7], -10, -20, 0),
+                      control(self->controls[8], 0, -10, 10));
+    for (frame = 0; frame < frames; ++frame) {
+        DSP_SAMPLE input[2];
+        for (channel = 0; channel < self->inputs_count; ++channel)
+            input[channel] = spatial_input(self->inputs[channel][frame]);
+        for (channel = 0; channel < self->outputs_count; ++channel)
+            self->outputs[channel][frame] =
+                gnuitar_tube_sample(state, input[channel], channel, &settings) / LEGACY_FULL_SCALE;
+    }
+}
+
 static TimeEffectKind
 effect_kind(const LV2_Descriptor *descriptor)
 {
@@ -422,6 +463,8 @@ effect_kind(const LV2_Descriptor *descriptor)
         return AUTOWAH;
     if (descriptor->run == run_pitch)
         return PITCH;
+    if (descriptor->run == run_tubeamp)
+        return TUBEAMP;
     return DELAY;
 }
 
@@ -475,6 +518,8 @@ gnuitar_time_effect_descriptor(uint32_t index)
         {GNUITAR_URI "autowah-stereo", instantiate_stereo, connect_port, activate, run_autowah, NULL, cleanup, NULL},
         {GNUITAR_URI "pitch-shift-mono", instantiate_mono, connect_port, activate, run_pitch, NULL, cleanup, NULL},
         {GNUITAR_URI "pitch-shift-stereo", instantiate_stereo, connect_port, activate, run_pitch, NULL, cleanup, NULL},
+        {GNUITAR_URI "tube-amplifier-mono", instantiate_mono, connect_port, activate, run_tubeamp, NULL, cleanup, NULL},
+        {GNUITAR_URI "tube-amplifier-stereo", instantiate_stereo, connect_port, activate, run_tubeamp, NULL, cleanup, NULL},
     };
     return index < sizeof(descriptors) / sizeof(descriptors[0]) ? &descriptors[index] : NULL;
 }

@@ -23,36 +23,18 @@
 #ifndef _TUBEAMP_H_
 #define _TUBEAMP_H_ 1
 
-#include <stdint.h>
 #include "effect.h"
-#include "biquad.h"
+#include "dsp/tubeamp_dsp.h"
 
 effect_t *tubeamp_create(void);
 
-#define MAX_STAGES 4
+#define MAX_STAGES GNUITAR_TUBE_STAGES
 
 struct tubeamp_params {
-    /* internal state variables */
-    Biquad_t    highpass[MAX_STAGES];
-    Biquad_t    lowpass[MAX_STAGES];
-    Biquad_t    biaslowpass[MAX_STAGES];
-    Biquad_t    bq_bass, bq_middle, bq_treble;
-    Biquad_t    decimation_filter;
-
-    /* user parameters */
-    int         stages, impulse_model, impulse_quality;
-    float       gain, asymmetry, biasfactor;
-    float       tone_bass, tone_middle, tone_treble;
-    
-    /* internal stuff */
-    float       bias[MAX_STAGES];
-    float       r_i[MAX_STAGES], r_k_p[MAX_STAGES];
-    
-    /* effect state stuff */
-    float       in[MAX_CHANNELS];
-    /* convolution buffer */
-    DSP_SAMPLE  *buf[MAX_CHANNELS];
-    int_fast16_t    bufidx[MAX_CHANNELS];
+    TubeAmpDSP dsp;
+    int stages, impulse_model, impulse_quality;
+    float gain, asymmetry, biasfactor;
+    float tone_bass, tone_middle, tone_treble;
 };
 
 #endif
