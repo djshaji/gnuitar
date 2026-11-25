@@ -821,6 +821,122 @@ test_delay_echo(const LV2_Descriptor *descriptor, const char *path, double rate,
     descriptor->cleanup(handle);
 }
 
+static void
+test_reverb_chorus(const LV2_Descriptor *descriptor, const char *path, double rate,
+                   uint32_t inputs, uint32_t outputs, bool chorus)
+{
+    enum { count = 4096 };
+    const LV2_Feature *const features[] = {NULL};
+    LV2_Handle handle = descriptor->instantiate(descriptor, rate, path, features);
+    float left[count] = {0.5f}, right[count] = {0};
+    float out_l[count], out_r[count];
+    float reverb[] = {130.0f, 100.0f, 0.0f};
+    float chorus_settings[] = {4.0f, 0.0f, 200.0f, 100.0f, 0.0f, 2.0f};
+    bool spread = inputs != outputs;
+    uint32_t frame, offset, block, port;
+
+    CHECK(handle);
+    for (port = 0; port < (chorus ? 6u : 3u); ++port)
+        descriptor->connect_port(handle, inputs + outputs + port,
+                                 chorus ? &chorus_settings[port] : &reverb[port]);
+
+    descriptor->connect_port(handle, 0, left);
+    if (inputs == 2)
+        descriptor->connect_port(handle, 1, right);
+    descriptor->connect_port(handle, inputs, out_l);
+    if (outputs == 2)
+        descriptor->connect_port(handle, inputs + 1, out_r);
+
+    descriptor->activate(handle);
+    descriptor->run(handle, count);
+    if (chorus) {
+        float amplitude = 0.5f / sqrtf(2.0f);
+        double delay = rate * 0.002;
+        uint32_t tap = (uint32_t) delay + 1;
+        float *target = spread ? out_r : out_l;
+
+        check_audio(out_l[0], 0.0f);
+        check_audio(out_l[1], amplitude);
+        check_audio(target[tap - 1], 0.0f);
+        check_audio(target[tap], amplitude * (1.0 - (delay - floor(delay))));
+        check_audio(target[tap + 1], amplitude * (delay - floor(delay)));
+
+        /* Exercise modulation and feedback with deterministic input across many calls. */
+        chorus_settings[1] = 2.5f;
+        chorus_settings[3] = 65.0f;
+        chorus_settings[4] = 30.0f;
+        for (frame = 0; frame < count / 2; ++frame)
+            left[frame] = (float) (0.25 * sin(0.12 * frame));
+        descriptor->activate(handle);
+        descriptor->run(handle, count);
+        if (spread)
+            CHECK(memcmp(out_l, out_r, sizeof(out_l)) != 0);
+    } else {
+        uint32_t first_ap = (uint32_t) (113 * (rate / 44100.0));
+
+        check_audio(out_l[0], 0.5 * 6 * 0.7 * 0.7 * 0.7);
+        check_audio(out_l[first_ap - 1], 0.0f);
+        check_audio(out_l[first_ap], 0.5 * 6 * 0.7 * 0.7 * (1.0 - 0.7 * 0.7));
+    }
+
+    for (frame = 0; frame < count; ++frame) {
+        CHECK(isfinite(out_l[frame]));
+        if (outputs == 2)
+            CHECK(isfinite(out_r[frame]));
+        if (inputs == 2)
+            CHECK(out_r[frame] == 0.0f);
+    }
+
+    descriptor->activate(handle);
+    offset = 0;
+    block = 0;
+    while (offset < count) {
+        const uint32_t sizes[] = {0, 1, 31, 2, 263, 127};
+        uint32_t frames = sizes[block++ % (sizeof(sizes) / sizeof(sizes[0]))];
+        if (frames > count - offset)
+            frames = count - offset;
+        descriptor->connect_port(handle, 0, left + offset);
+        if (inputs == 2)
+            descriptor->connect_port(handle, 1, right + offset);
+        descriptor->connect_port(handle, inputs, (outputs == 2 ? right : left) + offset);
+        if (outputs == 2)
+            descriptor->connect_port(handle, inputs + 1, left + offset);
+        descriptor->run(handle, frames);
+        offset += frames;
+    }
+    CHECK(memcmp(outputs == 2 ? right : left, out_l, sizeof(out_l)) == 0);
+    if (outputs == 2)
+        CHECK(memcmp(left, out_r, sizeof(out_r)) == 0);
+
+    /* Check both extremes against the rate-specific allocation. */
+    reverb[0] = 3000.0f;
+    reverb[2] = 100.0f;
+    chorus_settings[0] = 50.0f;
+    chorus_settings[1] = 20.0f;
+    chorus_settings[5] = 4.0f;
+    descriptor->run(handle, 1);
+    if (!chorus) {
+        reverb[0] = 1.0f;
+        for (frame = 0; frame < count; ++frame) {
+            left[frame] = 0.5f;
+            right[frame] = 0.0f;
+        }
+        descriptor->activate(handle);
+        descriptor->connect_port(handle, 0, left);
+        if (inputs == 2)
+            descriptor->connect_port(handle, 1, right);
+        descriptor->connect_port(handle, inputs, out_l);
+        if (outputs == 2)
+            descriptor->connect_port(handle, inputs + 1, out_r);
+        for (block = 0; block < 32; ++block) {
+            descriptor->run(handle, count);
+            for (frame = 0; frame < count; ++frame)
+                CHECK(isfinite(out_l[frame]) && fabsf(out_l[frame]) < 128.0f);
+        }
+    }
+    descriptor->cleanup(handle);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -835,6 +951,8 @@ main(int argc, char **argv)
         URI_PREFIX "eq-bank-mono", URI_PREFIX "eq-bank-stereo",
         URI_PREFIX "delay-mono", URI_PREFIX "delay-stereo", URI_PREFIX "delay-mono-to-stereo",
         URI_PREFIX "echo-mono", URI_PREFIX "echo-stereo", URI_PREFIX "echo-mono-to-stereo",
+        URI_PREFIX "reverb-mono", URI_PREFIX "reverb-stereo",
+        URI_PREFIX "chorus-mono", URI_PREFIX "chorus-stereo", URI_PREFIX "chorus-mono-to-stereo",
     };
     const LV2_Descriptor *(*get_descriptor)(uint32_t);
     void *library;
@@ -863,6 +981,14 @@ main(int argc, char **argv)
         const LV2_Descriptor *descriptor = get_descriptor(i);
         uint32_t channels = i % 2 + 1;
         CHECK(descriptor && strcmp(descriptor->URI, uris[i]) == 0);
+        if (i >= 22) {
+            uint32_t ins = i == 23 || i == 25 ? 2 : 1;
+            uint32_t outs = i == 26 ? 2 : ins;
+            test_reverb_chorus(descriptor, bundle_path, 44100.0, ins, outs, i >= 24);
+            test_reverb_chorus(descriptor, bundle_path, 48000.0, ins, outs, i >= 24);
+            test_reverb_chorus(descriptor, bundle_path, 96000.0, ins, outs, i >= 24);
+            continue;
+        }
         if (i >= 16) {
             uint32_t layout = (i - 16) % 3;
             test_delay_echo(descriptor, bundle_path, 44100.0,

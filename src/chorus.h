@@ -24,7 +24,7 @@
 #define _CHORUS_H_ 1
 
 #include "effect.h"
-#include "backbuf.h"
+#include "dsp/reverb_chorus_dsp.h"
 
 effect_t *   chorus_create(void);
 

@@ -6,35 +6,42 @@
 #include <lv2/core/lv2.h>
 
 #include "dsp/delay_echo_dsp.h"
+#include "dsp/reverb_chorus_dsp.h"
 
 #define GNUITAR_URI "https://github.com/djshaji/gnuitar#"
+#define SINE_SIZE 65536
+
+typedef enum { DELAY, ECHO, REVERB, CHORUS } TimeEffectKind;
 
 typedef struct {
     const float *inputs[2];
     float *outputs[2];
-    const float *controls[3];
-    Backbuf_t *history[2][GNUITAR_ECHO_MAX_VOICES];
+    const float *controls[6];
+    Backbuf_t *history[2][GNUITAR_REVERB_LINES];
+    float *sine;
+    double phase;
     double rate;
-    unsigned int inputs_count, outputs_count, lines;
-} DelayEcho;
+    unsigned int inputs_count, outputs_count, lines, num_controls;
+} TimeEffect;
 
 static void
 cleanup(LV2_Handle handle)
 {
-    DelayEcho *self = handle;
+    TimeEffect *self = handle;
     unsigned int channel, line;
 
     for (channel = 0; channel < self->inputs_count; ++channel) {
         for (line = 0; line < self->lines; ++line)
             del_Backbuf(self->history[channel][line]);
     }
+    free(self->sine);
     free(self);
 }
 
 static LV2_Handle
-create(double rate, unsigned int inputs, unsigned int outputs, bool echo)
+create(double rate, unsigned int inputs, unsigned int outputs, TimeEffectKind kind)
 {
-    DelayEcho *self;
+    TimeEffect *self;
     unsigned int channel, line;
 
     if (!isfinite(rate) || rate < 1.0 || rate > 384000.0)
@@ -46,12 +53,40 @@ create(double rate, unsigned int inputs, unsigned int outputs, bool echo)
     self->rate = rate;
     self->inputs_count = inputs;
     self->outputs_count = outputs;
-    self->lines = echo ? GNUITAR_ECHO_MAX_VOICES : 1;
+    self->lines = kind == ECHO ? GNUITAR_ECHO_MAX_VOICES
+                : kind == REVERB ? GNUITAR_REVERB_LINES : 1;
+    self->num_controls = kind == CHORUS ? 6 : 3;
+    if (kind == CHORUS) {
+        self->sine = malloc((SINE_SIZE + 1) * sizeof(*self->sine));
+        if (!self->sine) {
+            cleanup(self);
+            return NULL;
+        }
+        for (line = 0; line <= SINE_SIZE; ++line)
+            self->sine[line] = (float) sin(6.28318530717958647692 * line / SINE_SIZE);
+    }
     for (channel = 0; channel < inputs; ++channel) {
         for (line = 0; line < self->lines; ++line) {
-            double seconds = echo ? GNUITAR_ECHO_MAX_MS / 1000.0 * gnuitar_echo_ratio(line)
-                                  : GNUITAR_DELAY_MAX_SECONDS * GNUITAR_DELAY_MAX_REPEATS;
-            self->history[channel][line] = new_Backbuf((unsigned int) ceil(rate * seconds));
+            unsigned int capacity;
+
+            switch (kind) {
+            case ECHO:
+                capacity = (unsigned int) ceil(rate * GNUITAR_ECHO_MAX_MS / 1000.0 *
+                                               gnuitar_echo_ratio(line));
+                break;
+            case REVERB:
+                capacity = gnuitar_reverb_capacity(line, rate);
+                break;
+            case CHORUS:
+                capacity = (unsigned int) ceil(rate * (GNUITAR_CHORUS_MAX_BASE +
+                                                       GNUITAR_CHORUS_MAX_DEPTH) / 1000.0) + 1;
+                break;
+            default:
+                capacity = (unsigned int) ceil(rate * GNUITAR_DELAY_MAX_SECONDS *
+                                               GNUITAR_DELAY_MAX_REPEATS);
+                break;
+            }
+            self->history[channel][line] = new_Backbuf(capacity);
             if (!self->history[channel][line]) {
                 cleanup(self);
                 return NULL;
@@ -64,23 +99,24 @@ create(double rate, unsigned int inputs, unsigned int outputs, bool echo)
 static void
 connect_port(LV2_Handle handle, uint32_t port, void *data)
 {
-    DelayEcho *self = handle;
+    TimeEffect *self = handle;
     unsigned int controls_start = self->inputs_count + self->outputs_count;
 
     if (port < self->inputs_count)
         self->inputs[port] = data;
     else if (port < controls_start)
         self->outputs[port - self->inputs_count] = data;
-    else if (port < controls_start + 3)
+    else if (port < controls_start + self->num_controls)
         self->controls[port - controls_start] = data;
 }
 
 static void
 activate(LV2_Handle handle)
 {
-    DelayEcho *self = handle;
+    TimeEffect *self = handle;
     unsigned int channel, line;
 
+    self->phase = 0.0;
     for (channel = 0; channel < self->inputs_count; ++channel) {
         for (line = 0; line < self->lines; ++line) {
             Backbuf_t *history = self->history[channel][line];
@@ -99,7 +135,7 @@ control(const float *port, double fallback, double minimum, double maximum)
 static void
 run_delay(LV2_Handle handle, uint32_t frames)
 {
-    DelayEcho *self = handle;
+    TimeEffect *self = handle;
     DelayTaps taps = gnuitar_delay_taps(self->rate,
         control(self->controls[0], 1000, 1, GNUITAR_DELAY_MAX_SECONDS * 1000),
         control(self->controls[1], 55, 10, 100),
@@ -126,7 +162,7 @@ run_delay(LV2_Handle handle, uint32_t frames)
 static void
 run_echo(LV2_Handle handle, uint32_t frames)
 {
-    DelayEcho *self = handle;
+    TimeEffect *self = handle;
     EchoTaps taps = gnuitar_echo_taps(self->rate,
         control(self->controls[0], 200, 1, GNUITAR_ECHO_MAX_MS),
         control(self->controls[1], 30, 1, 80),
@@ -152,13 +188,80 @@ run_echo(LV2_Handle handle, uint32_t frames)
     }
 }
 
+static void
+run_reverb(LV2_Handle handle, uint32_t frames)
+{
+    TimeEffect *self = handle;
+    ReverbTaps taps = gnuitar_reverb_taps(self->rate,
+        control(self->controls[0], 130, 1, GNUITAR_REVERB_MAX_MS),
+        control(self->controls[1], 25, 0, 100),
+        control(self->controls[2], 25, 0, 100));
+    uint32_t frame;
+
+    for (frame = 0; frame < frames; ++frame) {
+        float left = self->inputs[0][frame];
+        float right = self->inputs_count == 2 ? self->inputs[1][frame] : 0.0f;
+
+        /* Bound the recirculating signal at high regeneration settings. */
+        self->outputs[0][frame] = gnuitar_reverb_sample(self->history[0], left, &taps, 8.0f);
+        if (self->outputs_count == 2)
+            self->outputs[1][frame] = gnuitar_reverb_sample(self->history[1], right, &taps, 8.0f);
+    }
+}
+
+static void
+run_chorus(LV2_Handle handle, uint32_t frames)
+{
+    TimeEffect *self = handle;
+    ChorusControls settings = gnuitar_chorus_controls(self->rate,
+        control(self->controls[0], 3.5, 0, GNUITAR_CHORUS_MAX_BASE),
+        control(self->controls[1], 2.5, 0, GNUITAR_CHORUS_MAX_DEPTH),
+        control(self->controls[2], 1000, 200, 5000),
+        control(self->controls[3], 50, 0, 100),
+        control(self->controls[4], 0, 0, 50),
+        (unsigned int) lround(control(self->controls[5], 3, 1, GNUITAR_CHORUS_MAX_VOICES)),
+        self->sine, SINE_SIZE);
+    uint32_t frame;
+
+    for (frame = 0; frame < frames; ++frame) {
+        float left = self->inputs[0][frame];
+        float right = self->inputs_count == 2 ? self->inputs[1][frame] : 0.0f;
+
+        if (self->inputs_count == 1 && self->outputs_count == 2) {
+            DSP_SAMPLE output[2];
+            gnuitar_chorus_spread(self->history[0][0], left, &settings, self->phase, output, 2);
+            self->outputs[0][frame] = output[0];
+            self->outputs[1][frame] = output[1];
+        } else {
+            self->outputs[0][frame] = gnuitar_chorus_channel(self->history[0][0], left,
+                                                            &settings, self->phase);
+            if (self->outputs_count == 2)
+                self->outputs[1][frame] = gnuitar_chorus_channel(self->history[1][0], right,
+                                                                &settings, self->phase);
+        }
+        self->phase = gnuitar_chorus_wrap(self->phase + settings.step);
+    }
+}
+
+static TimeEffectKind
+effect_kind(const LV2_Descriptor *descriptor)
+{
+    if (descriptor->run == run_echo)
+        return ECHO;
+    if (descriptor->run == run_reverb)
+        return REVERB;
+    if (descriptor->run == run_chorus)
+        return CHORUS;
+    return DELAY;
+}
+
 static LV2_Handle
 instantiate_mono(const LV2_Descriptor *descriptor, double rate, const char *bundle_path,
                  const LV2_Feature *const *features)
 {
     (void) bundle_path;
     (void) features;
-    return create(rate, 1, 1, descriptor->run == run_echo);
+    return create(rate, 1, 1, effect_kind(descriptor));
 }
 
 static LV2_Handle
@@ -167,7 +270,7 @@ instantiate_stereo(const LV2_Descriptor *descriptor, double rate, const char *bu
 {
     (void) bundle_path;
     (void) features;
-    return create(rate, 2, 2, descriptor->run == run_echo);
+    return create(rate, 2, 2, effect_kind(descriptor));
 }
 
 static LV2_Handle
@@ -176,11 +279,11 @@ instantiate_mono_to_stereo(const LV2_Descriptor *descriptor, double rate, const 
 {
     (void) bundle_path;
     (void) features;
-    return create(rate, 1, 2, descriptor->run == run_echo);
+    return create(rate, 1, 2, effect_kind(descriptor));
 }
 
 const LV2_Descriptor *
-gnuitar_delay_echo_descriptor(uint32_t index)
+gnuitar_time_effect_descriptor(uint32_t index)
 {
     static const LV2_Descriptor descriptors[] = {
         {GNUITAR_URI "delay-mono", instantiate_mono, connect_port, activate, run_delay, NULL, cleanup, NULL},
@@ -189,6 +292,11 @@ gnuitar_delay_echo_descriptor(uint32_t index)
         {GNUITAR_URI "echo-mono", instantiate_mono, connect_port, activate, run_echo, NULL, cleanup, NULL},
         {GNUITAR_URI "echo-stereo", instantiate_stereo, connect_port, activate, run_echo, NULL, cleanup, NULL},
         {GNUITAR_URI "echo-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_echo, NULL, cleanup, NULL},
+        {GNUITAR_URI "reverb-mono", instantiate_mono, connect_port, activate, run_reverb, NULL, cleanup, NULL},
+        {GNUITAR_URI "reverb-stereo", instantiate_stereo, connect_port, activate, run_reverb, NULL, cleanup, NULL},
+        {GNUITAR_URI "chorus-mono", instantiate_mono, connect_port, activate, run_chorus, NULL, cleanup, NULL},
+        {GNUITAR_URI "chorus-stereo", instantiate_stereo, connect_port, activate, run_chorus, NULL, cleanup, NULL},
+        {GNUITAR_URI "chorus-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_chorus, NULL, cleanup, NULL},
     };
     return index < sizeof(descriptors) / sizeof(descriptors[0]) ? &descriptors[index] : NULL;
 }

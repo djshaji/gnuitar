@@ -167,8 +167,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define MAX_DEPTH       20
-#define MAX_BASEDELAY   50
+#define MAX_DEPTH GNUITAR_CHORUS_MAX_DEPTH
+#define MAX_BASEDELAY GNUITAR_CHORUS_MAX_BASE
  
 static void
 update_chorus_basedelay(GtkAdjustment *adj, struct chorus_params *params)
@@ -415,128 +415,41 @@ chorus_init(struct effect *p)
 }
 
 static void
-chorus_filter_mono(struct effect *p, data_block_t *db)
-{
-    struct chorus_params *cp;
-    int             count, i, curr_channel = 0;
-    double          dly, Speed, tmp_ang, Depth, BaseDelay, Dry, Wet, Rgn;
-    DSP_SAMPLE     *s;
-    DSP_SAMPLE      tmp, rgn;
-
-    cp = (struct chorus_params *) p->params;
-
-    s = db->data;
-    count = db->len;
-
-    Dry = 1 - cp->drywet / 100.0;
-    Wet =     cp->drywet / 100.0;
-    Rgn = cp->regen / 100.0;
-    Speed = 1000.0 / cp->speed / sample_rate;
-    Depth = cp->depth / 1000.0 * sample_rate;
-    BaseDelay = cp->basedelay / 1000.0 * sample_rate;
-
-    while (count) {
-        tmp = 0.0;
-        tmp_ang = cp->ang;
-        for (i = 0; i < cp->voices; i += 1) {
-            dly = BaseDelay * i / cp->voices + Depth * (1 + sin_lookup(tmp_ang)) / 2.0;
-            tmp += cp->history[curr_channel]->get_interpolated(cp->history[curr_channel], dly) / sqrt(cp->voices);
-            tmp_ang += 1.0 / cp->voices;
-            if (tmp_ang >= 1.0)
-                tmp_ang -= 1.0;
-        }
-#ifdef CLIP_EVERYWHERE
-        CLIP_SAMPLE(tmp)
-#endif
-        /* XXX regen sounds generally bad, maybe we should take it away? */
-        dly = BaseDelay + Depth * (1 + sin_lookup(cp->ang)) / 2.0;
-        rgn = cp->history[curr_channel]->get_interpolated(cp->history[curr_channel], dly) * Rgn + *s;
-#ifdef CLIP_EVERYWHERE
-        CLIP_SAMPLE(rgn)
-#endif
-        cp->history[curr_channel]->add(cp->history[curr_channel], rgn);
-	*s = *s * Dry / sqrt(cp->voices) + tmp * Wet;
-
-	curr_channel = (curr_channel + 1) % db->channels;
-        if (curr_channel == 0) {
-            cp->ang += Speed;
-            if (cp->ang >= 1.0)
-                cp->ang -= 1.0;
-        }
-
-	s++;
-	count--;
-    }
-}
-
-/* mono to N */
-static void
-chorus_filter_mc(struct effect *p, data_block_t *db)
-{
-    struct chorus_params *cp;
-    int             i, count, curr_channel = 0;
-    double          dly, Speed, tmp_ang, Depth, BaseDelay, Dry, Wet, Rgn;
-    DSP_SAMPLE     *outs, *ins;
-    DSP_SAMPLE      tmp, rgn;
-
-    cp = (struct chorus_params *) p->params;
-
-    assert(db->channels == 1);
-    
-    ins = db->data;
-    outs = db->data_swap;
-    db->data = outs;
-    db->data_swap = ins;
-
-    count = db->len;
-    
-    Dry = 1 - cp->drywet / 100.0;
-    Wet =     cp->drywet / 100.0;
-    Rgn = cp->regen / 100.0;
-    Speed = 1000.0 / cp->speed / sample_rate;
-    Depth = cp->depth / 1000.0 * sample_rate;
-    BaseDelay = cp->basedelay / 1000.0 * sample_rate;
-
-    db->channels = n_output_channels;
-    db->len *= n_output_channels;
-
-    while (count) {
-        tmp_ang = cp->ang;
-
-        i = 0;
-        /* mix # voices repeatedly into output channels if need be */
-        for (curr_channel = 0; curr_channel < db->channels; curr_channel += 1) {
-            dly = BaseDelay * i / db->channels + Depth * (1 + sin_lookup(tmp_ang)) / 2.0;
-            tmp = cp->history[0]->get_interpolated(cp->history[0], dly);
-            tmp_ang += 1.0 / cp->voices;
-            if (tmp_ang >= 1.0)
-                tmp_ang -= 1.0;
-            *outs++ = (*ins * Dry + tmp * Wet) / sqrt(2);
-            i += 1;
-        }
-        
-        dly = BaseDelay + Depth * (1 + sin_lookup(cp->ang)) / 2.0;
-        rgn = cp->history[0]->get_interpolated(cp->history[0], dly) * Rgn + *ins;
-        cp->history[0]->add(cp->history[0], rgn);
-
-        cp->ang += Speed;
-        if (cp->ang >= 1.0)
-            cp->ang -= 1.0;
-
-	ins++;
-	count--;
-    }
-}
-
-static void
 chorus_filter(struct effect *p, data_block_t *db)
 {
     struct chorus_params *params = p->params;
-    
+    ChorusControls controls;
+    unsigned int voices = params->voices >= 1 && params->voices <= GNUITAR_CHORUS_MAX_VOICES
+                        ? params->voices : 3;
+    DSP_SAMPLE *input = db->data;
+    int frame, channel;
+
+    if (!sample_rate || !(params->speed > 0.0f))
+        return;
+    controls = gnuitar_chorus_controls(sample_rate, params->basedelay, params->depth,
+                                        params->speed, params->drywet, params->regen,
+                                        voices, sin_lookup_table, SIN_LOOKUP_SIZE);
     if (params->multichannel && db->channels == 1 && n_output_channels > 1) {
-        chorus_filter_mc(p, db);
+        DSP_SAMPLE *output = db->data_swap;
+        for (frame = 0; frame < db->len; ++frame) {
+            gnuitar_chorus_spread(params->history[0], input[frame], &controls,
+                                  params->ang, output + frame * n_output_channels,
+                                  n_output_channels);
+            params->ang = (float) gnuitar_chorus_wrap(params->ang + controls.step);
+        }
+        db->channels = n_output_channels;
+        db->len *= n_output_channels;
+        db->data = output;
+        db->data_swap = input;
     } else {
-        chorus_filter_mono(p, db);
+        for (frame = 0; frame < db->len / db->channels; ++frame) {
+            for (channel = 0; channel < db->channels; ++channel) {
+                DSP_SAMPLE *sample = input + frame * db->channels + channel;
+                *sample = gnuitar_chorus_channel(params->history[channel], *sample,
+                                                 &controls, params->ang);
+            }
+            params->ang = (float) gnuitar_chorus_wrap(params->ang + controls.step);
+        }
     }
 }
 
@@ -566,7 +479,8 @@ chorus_save(struct effect *p, SAVE_ARGS)
     SAVE_DOUBLE("speed", params->speed);
     SAVE_DOUBLE("regen", params->regen);
     SAVE_INT("voices", params->voices);
-    SAVE_INT("multichannel", params->voices);
+    SAVE_INT("multichannel", params->multichannel != 0);
+    SAVE_INT("routing_version", 1);
 }
 
 static void
@@ -580,7 +494,12 @@ chorus_load(struct effect *p, LOAD_ARGS)
     LOAD_DOUBLE("speed", params->speed);
     LOAD_DOUBLE("regen", params->regen);
     LOAD_INT("voices", params->voices);
-    LOAD_INT("multichannel", params->voices);
+    /* Older saves wrote the voice count in place of the routing flag. */
+    params->multichannel = 0;
+    if (g_key_file_has_key(preset, group, "routing_version", NULL)) {
+        LOAD_INT("multichannel", params->multichannel);
+        params->multichannel = params->multichannel != 0;
+    }
 }
 
 effect_t *
@@ -589,6 +508,7 @@ chorus_create()
     effect_t       *p;
     struct chorus_params *cp;
     int             i;
+    unsigned int rate = sample_rate > MAX_SAMPLE_RATE ? sample_rate : MAX_SAMPLE_RATE;
 
     p = calloc(1, sizeof(effect_t));
     p->params = calloc(1, sizeof(struct chorus_params));
@@ -601,7 +521,7 @@ chorus_create()
     cp = p->params;
 
     for (i = 0; i < MAX_CHANNELS; i++)
-	cp->history[i] = new_Backbuf((MAX_DEPTH + MAX_BASEDELAY) / 1000.0 * MAX_SAMPLE_RATE);
+	cp->history[i] = new_Backbuf(ceil((MAX_DEPTH + MAX_BASEDELAY) / 1000.0 * rate) + 1);
     
     cp->ang = 0.0;
     cp->depth = 2.5;
