@@ -167,3 +167,13 @@ gt:autowah-stereo
     a lv2:Plugin ;
     lv2:binary <gnuitar.so> ;
     rdfs:seeAlso <gnuitar.ttl> .
+
+gt:pitch-shift-mono
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
+
+gt:pitch-shift-stereo
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .

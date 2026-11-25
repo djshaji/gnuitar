@@ -1,9 +1,11 @@
 # GNUitar LV2 plugins
 
 The Linux bundle provides Digital Amp, Tremolo, Tremolo Bar, Noise Gate,
-Sustain, Distort, Overdrive, Eq Bank, Delay, Echo, Reverb, Chorus / Flanger, Phaser, Rotary Speaker,
-and Autowah. All effects except Rotary Speaker have mono and stereo variants. Delay, Echo,
-Chorus / Flanger, Phaser, and Rotary Speaker have mono-to-stereo variants. Controls take effect at host block boundaries.
+Sustain, Distort, Overdrive, Eq Bank, Delay, Echo, Reverb, Chorus / Flanger,
+Phaser, Rotary Speaker, Autowah, and Pitch Shift. All effects except Rotary
+Speaker have mono and stereo variants. Delay, Echo, Chorus / Flanger, Phaser,
+and Rotary Speaker have mono-to-stereo variants. Controls are read at host
+block boundaries.
 
 - Digital Amp and Tremolo use the same calculations as the standalone app
   directly on normalized LV2 audio.
@@ -59,6 +61,13 @@ Chorus / Flanger, Phaser, and Rotary Speaker have mono-to-stereo variants. Contr
   cycles between the frequency settings. Pedal mode uses the 0–1 Pedal
   Position control, which hosts can automate or map to an expression pedal.
   The sweep and filter coefficients update every 64 audio frames.
+- Pitch Shift uses a streaming phase vocoder with linked stereo phase,
+  −24 to +12 semitones, ±50 cents of fine tuning, and wet mix. It reports
+  one analysis window of latency and delays the dry path by the same
+  amount. That is 2,048 frames at 44.1 and 48 kHz and 4,096 at 96 kHz.
+  At unity pitch, the wet and dry paths are identical. Transposition can
+  spread transients around the nominal alignment. The combined coarse
+  and fine settings are capped at the legacy range of −24 to +12 semitones.
 
 ## Build and test
 

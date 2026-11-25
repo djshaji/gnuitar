@@ -945,6 +945,10 @@ add_pressed(GtkWidget *widget, gpointer data)
     GtkWidget      *known_effects = data;
 
     effect_t *effect = effect_create(effects_row);
+    if (!effect) {
+        gnuitar_printf("Could not create effect.\n");
+        return;
+    }
     idx = effect_insert(effect, curr_row);
 
     gtk_clist_get_text(GTK_CLIST(known_effects), effects_row, 0, &name);
