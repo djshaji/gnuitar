@@ -10,8 +10,9 @@ set(GNUITAR_BUNDLE_DIR "${CMAKE_CURRENT_BINARY_DIR}/bundles/gnuitar.lv2")
 set(GNUITAR_LV2_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/lv2"
     CACHE STRING "Directory where LV2 bundles are installed")
 
-add_library(gnuitar_lv2 MODULE pilot.c)
+add_library(gnuitar_lv2 MODULE pilot.c ../src/biquad.c)
 target_compile_features(gnuitar_lv2 PRIVATE c_std_99)
+target_compile_definitions(gnuitar_lv2 PRIVATE FLOAT_DSP _DEFAULT_SOURCE)
 target_include_directories(gnuitar_lv2 PRIVATE "${LV2_INCLUDE_DIR}" ../src)
 target_link_libraries(gnuitar_lv2 PRIVATE m)
 set_target_properties(gnuitar_lv2 PROPERTIES
@@ -34,9 +35,10 @@ install(FILES manifest.ttl gnuitar.ttl ../COPYING
     DESTINATION "${GNUITAR_LV2_INSTALL_DIR}/gnuitar.lv2")
 
 if(BUILD_TESTING)
-    add_executable(test_pilot tests/test_pilot.c)
+    add_executable(test_pilot tests/test_pilot.c ../src/biquad.c)
     target_compile_features(test_pilot PRIVATE c_std_99)
-    target_include_directories(test_pilot PRIVATE "${LV2_INCLUDE_DIR}")
+    target_compile_definitions(test_pilot PRIVATE FLOAT_DSP _DEFAULT_SOURCE)
+    target_include_directories(test_pilot PRIVATE "${LV2_INCLUDE_DIR}" ../src)
     target_link_libraries(test_pilot PRIVATE ${CMAKE_DL_LIBS} m)
     add_test(NAME pilot_dsp COMMAND test_pilot "$<TARGET_FILE:gnuitar_lv2>")
 
