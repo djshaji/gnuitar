@@ -9,12 +9,13 @@
 #include "dsp/reverb_chorus_dsp.h"
 #include "dsp/spatial_dsp.h"
 #include "dsp/autowah_dsp.h"
+#include "dsp/pitch_dsp.h"
 
 #define GNUITAR_URI "https://github.com/djshaji/gnuitar#"
 #define SINE_SIZE 65536
 #define LEGACY_FULL_SCALE 8388608.0f
 
-typedef enum { DELAY, ECHO, REVERB, CHORUS, PHASER, ROTARY, AUTOWAH } TimeEffectKind;
+typedef enum { DELAY, ECHO, REVERB, CHORUS, PHASER, ROTARY, AUTOWAH, PITCH } TimeEffectKind;
 
 typedef struct {
     const float *inputs[2];
@@ -22,6 +23,8 @@ typedef struct {
     const float *controls[8];
     Backbuf_t *history[2][GNUITAR_REVERB_LINES];
     float *sine;
+    float *latency;
+    PitchDSP *pitch;
     void *dsp;
     TimeEffectKind kind;
     double phase;
@@ -39,6 +42,7 @@ cleanup(LV2_Handle handle)
         for (line = 0; line < self->lines; ++line)
             del_Backbuf(self->history[channel][line]);
     }
+    gnuitar_pitch_destroy(self->pitch);
     free(self->dsp);
     free(self->sine);
     free(self);
@@ -50,7 +54,8 @@ create(double rate, unsigned int inputs, unsigned int outputs, TimeEffectKind ki
     TimeEffect *self;
     unsigned int channel, line;
 
-    if (!isfinite(rate) || rate < 1.0 || rate > 384000.0)
+    if (!isfinite(rate) || rate < 1.0 || rate > 384000.0 ||
+        (kind == PITCH && rate < GNUITAR_PITCH_MIN_RATE))
         return NULL;
 
     self = calloc(1, sizeof(*self));
@@ -62,7 +67,7 @@ create(double rate, unsigned int inputs, unsigned int outputs, TimeEffectKind ki
     self->outputs_count = outputs;
     self->lines = kind == ECHO ? GNUITAR_ECHO_MAX_VOICES
                 : kind == REVERB ? GNUITAR_REVERB_LINES
-                : kind == PHASER || kind == ROTARY ? 0 : 1;
+                : kind == PHASER || kind == ROTARY || kind == PITCH ? 0 : 1;
     self->num_controls = kind == CHORUS ? 6 : 3;
     if (kind == PHASER || kind == ROTARY) {
         size_t size = kind == PHASER ? sizeof(PhaserDSP) : sizeof(RotaryDSP);
@@ -82,6 +87,14 @@ create(double rate, unsigned int inputs, unsigned int outputs, TimeEffectKind ki
             cleanup(self);
             return NULL;
         }
+    }
+    if (kind == PITCH) {
+        self->pitch = gnuitar_pitch_create(rate, inputs);
+        if (!self->pitch) {
+            cleanup(self);
+            return NULL;
+        }
+        gnuitar_pitch_reset(self->pitch, rate);
     }
     if (kind == CHORUS) {
         self->sine = malloc((SINE_SIZE + 1) * sizeof(*self->sine));
@@ -138,6 +151,8 @@ connect_port(LV2_Handle handle, uint32_t port, void *data)
         self->outputs[port - self->inputs_count] = data;
     else if (port < controls_start + self->num_controls)
         self->controls[port - controls_start] = data;
+    else if (self->kind == PITCH && port == controls_start + self->num_controls)
+        self->latency = data;
 }
 
 static void
@@ -147,6 +162,8 @@ activate(LV2_Handle handle)
     unsigned int channel, line;
 
     self->phase = 0.0;
+    if (self->pitch)
+        gnuitar_pitch_reset(self->pitch, self->rate);
     if (self->kind == PHASER)
         gnuitar_phaser_reset(self->dsp);
     if (self->kind == ROTARY)
@@ -363,6 +380,31 @@ run_autowah(LV2_Handle handle, uint32_t frames)
     }
 }
 
+static void
+run_pitch(LV2_Handle handle, uint32_t frames)
+{
+    TimeEffect *self = handle;
+    double semitones = lround(control(self->controls[0], 0, -24, 12));
+    double fine = control(self->controls[1], 0, -50, 50) / 100.0;
+    double ratio = gnuitar_pitch_ratio(semitones, fine);
+    float wet = control(self->controls[2], 100, 0, 100) / 100.0;
+    uint32_t frame, channel;
+
+    if (self->latency)
+        *self->latency = self->pitch->size;
+    for (frame = 0; frame < frames; ++frame) {
+        float input[2], output[2];
+
+        for (channel = 0; channel < self->inputs_count; ++channel) {
+            float sample = self->inputs[channel][frame];
+            input[channel] = isfinite(sample) ? sample : 0.0f;
+        }
+        gnuitar_pitch_frame(self->pitch, input, output, self->inputs_count, ratio, wet);
+        for (channel = 0; channel < self->outputs_count; ++channel)
+            self->outputs[channel][frame] = output[channel];
+    }
+}
+
 static TimeEffectKind
 effect_kind(const LV2_Descriptor *descriptor)
 {
@@ -378,6 +420,8 @@ effect_kind(const LV2_Descriptor *descriptor)
         return ROTARY;
     if (descriptor->run == run_autowah)
         return AUTOWAH;
+    if (descriptor->run == run_pitch)
+        return PITCH;
     return DELAY;
 }
 
@@ -429,6 +473,8 @@ gnuitar_time_effect_descriptor(uint32_t index)
         {GNUITAR_URI "rotary-speaker-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_rotary, NULL, cleanup, NULL},
         {GNUITAR_URI "autowah-mono", instantiate_mono, connect_port, activate, run_autowah, NULL, cleanup, NULL},
         {GNUITAR_URI "autowah-stereo", instantiate_stereo, connect_port, activate, run_autowah, NULL, cleanup, NULL},
+        {GNUITAR_URI "pitch-shift-mono", instantiate_mono, connect_port, activate, run_pitch, NULL, cleanup, NULL},
+        {GNUITAR_URI "pitch-shift-stereo", instantiate_stereo, connect_port, activate, run_pitch, NULL, cleanup, NULL},
     };
     return index < sizeof(descriptors) / sizeof(descriptors[0]) ? &descriptors[index] : NULL;
 }

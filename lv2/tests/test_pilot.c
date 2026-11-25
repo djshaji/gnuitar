@@ -1105,6 +1105,127 @@ test_autowah(const LV2_Descriptor *descriptor, double rate, uint32_t channels,
     descriptor->cleanup(plugin.handle);
 }
 
+static double
+pitch_tone_power(const float *samples, uint32_t first, uint32_t last,
+                 double rate, double hz)
+{
+    double previous = 0.0, old = 0.0;
+    double coefficient = 2.0 * cos(TWO_PI * hz * 4.0 / rate);
+    uint32_t i;
+
+    for (i = first; i < last; i += 4) {
+        double next = samples[i] + coefficient * previous - old;
+        old = previous;
+        previous = next;
+    }
+    return previous * previous + old * old - coefficient * previous * old;
+}
+
+static void
+test_pitch(const LV2_Descriptor *descriptor, double rate, uint32_t channels,
+           const char *bundle_path)
+{
+    Plugin plugin = open_plugin(descriptor, channels, rate, bundle_path);
+    const uint32_t expected_latency = rate == 96000.0 ? 4096 : 2048;
+    const uint32_t count = (uint32_t) rate;
+    const uint32_t bytes = count * sizeof(float);
+    const float notes[] = {-24.0f, -12.0f, 12.0f, 0.0f};
+    const float cents[] = {0.0f, 0.0f, 0.0f, 50.0f};
+    const double tone = 442.0;
+    float *memory = calloc(6, bytes);
+    float *left, *right, *out_l, *out_r, *split_l, *split_r;
+    float semitones = 12.0f, fine = 0.0f, wet = 0.0f, latency = -1.0f;
+    uint32_t i, setting, offset, block;
+
+    CHECK(memory);
+    left = memory;
+    right = left + count;
+    out_l = right + count;
+    out_r = out_l + count;
+    split_l = out_r + count;
+    split_r = split_l + count;
+    connect_control(plugin, 0, &semitones);
+    connect_control(plugin, 1, &fine);
+    connect_control(plugin, 2, &wet);
+    connect_control(plugin, 3, &latency);
+
+    left[0] = 0.75f;
+    right[0] = -0.25f;
+    connect_audio(plugin, left, right, out_l, out_r);
+    descriptor->activate(plugin.handle);
+    descriptor->run(plugin.handle, 0);
+    CHECK(latency == expected_latency);
+    descriptor->run(plugin.handle, expected_latency + 2);
+    for (i = 0; i <= expected_latency + 1; ++i) {
+        CHECK(out_l[i] == (i == expected_latency ? left[0] : 0.0f));
+        if (channels == 2)
+            CHECK(out_r[i] == (i == expected_latency ? right[0] : 0.0f));
+    }
+
+    semitones = 0.0f;
+    wet = 100.0f;
+    descriptor->activate(plugin.handle);
+    connect_audio(plugin, left, right, split_l, split_r);
+    descriptor->run(plugin.handle, expected_latency + 2);
+    CHECK(memcmp(out_l, split_l, (expected_latency + 2) * sizeof(float)) == 0);
+    if (channels == 2)
+        CHECK(memcmp(out_r, split_r, (expected_latency + 2) * sizeof(float)) == 0);
+
+    for (i = 0; i < count; ++i) {
+        left[i] = (float) (0.35 * sin(TWO_PI * tone * i / rate));
+        right[i] = -0.5f * left[i];
+    }
+    for (setting = 0; setting < sizeof(notes) / sizeof(notes[0]); ++setting) {
+        double expected = tone * pow(2.0, (notes[setting] + cents[setting] / 100.0) / 12.0);
+        double best = 0.0, strongest = 0.0;
+        int delta;
+
+        semitones = notes[setting];
+        fine = cents[setting];
+        descriptor->activate(plugin.handle);
+        connect_audio(plugin, left, right, out_l, out_r);
+        descriptor->run(plugin.handle, count);
+        for (delta = -24; delta <= 24; ++delta) {
+            double hz = expected + delta;
+            double power = pitch_tone_power(out_l, 3 * expected_latency, count, rate, hz);
+            if (power > strongest) {
+                strongest = power;
+                best = hz;
+            }
+        }
+        CHECK(fabs(expected - best) <= 1.0 && strongest > 1.0);
+        for (i = 0; i < count; ++i) {
+            CHECK(isfinite(out_l[i]));
+            if (i < expected_latency)
+                CHECK(out_l[i] == 0.0f);
+            if (channels == 2)
+                check_audio(out_r[i], -0.5f * out_l[i]);
+        }
+    }
+
+    memcpy(split_l, left, bytes);
+    memcpy(split_r, right, bytes);
+    descriptor->activate(plugin.handle);
+    offset = 0;
+    block = 0;
+    while (offset < count) {
+        const uint32_t sizes[] = {0, 1, 64, 8192, 31, 777};
+        uint32_t n = sizes[block++ % (sizeof(sizes) / sizeof(sizes[0]))];
+        if (n > count - offset)
+            n = count - offset;
+        connect_audio(plugin, split_l + offset, split_r + offset,
+                      (channels == 2 ? split_r : split_l) + offset, split_l + offset);
+        descriptor->run(plugin.handle, n);
+        offset += n;
+    }
+    CHECK(memcmp(channels == 2 ? split_r : split_l, out_l, bytes) == 0);
+    if (channels == 2)
+        CHECK(memcmp(split_l, out_r, bytes) == 0);
+
+    descriptor->cleanup(plugin.handle);
+    free(memory);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1124,6 +1245,7 @@ main(int argc, char **argv)
         URI_PREFIX "phaser-mono", URI_PREFIX "phaser-stereo", URI_PREFIX "phaser-mono-to-stereo",
         URI_PREFIX "rotary-speaker-mono-to-stereo",
         URI_PREFIX "autowah-mono", URI_PREFIX "autowah-stereo",
+        URI_PREFIX "pitch-shift-mono", URI_PREFIX "pitch-shift-stereo",
     };
     const LV2_Descriptor *(*get_descriptor)(uint32_t);
     void *library;
@@ -1152,6 +1274,12 @@ main(int argc, char **argv)
         const LV2_Descriptor *descriptor = get_descriptor(i);
         uint32_t channels = i % 2 + 1;
         CHECK(descriptor && strcmp(descriptor->URI, uris[i]) == 0);
+        if (i >= 33) {
+            test_pitch(descriptor, 44100.0, i == 33 ? 1 : 2, bundle_path);
+            test_pitch(descriptor, 48000.0, i == 33 ? 1 : 2, bundle_path);
+            test_pitch(descriptor, 96000.0, i == 33 ? 1 : 2, bundle_path);
+            continue;
+        }
         if (i >= 31) {
             test_autowah(descriptor, 44100.0, i == 31 ? 1 : 2, bundle_path);
             test_autowah(descriptor, 48000.0, i == 31 ? 1 : 2, bundle_path);

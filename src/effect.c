@@ -236,7 +236,8 @@ effect_t *
 effect_create(const int idx)
 {
     effect_t *effect = effect_list[idx].create_f();
-    effect->proc_init(effect);
+    if (effect)
+        effect->proc_init(effect);
     return effect;
 }
 

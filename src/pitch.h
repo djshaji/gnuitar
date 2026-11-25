@@ -12,17 +12,14 @@
 #define _PITCH_H_ 1
 
 #include "effect.h"
-#include "backbuf.h"
-#include "biquad.h"
+#include "dsp/pitch_dsp.h"
 
 effect_t *   pitch_create(void);
 
 struct pitch_params {
-    Backbuf_t      *history[MAX_CHANNELS];
-    DSP_SAMPLE     *channel_memory[MAX_CHANNELS], *output_memory[MAX_CHANNELS];
-    int memory_index;
-    float output_pos, output_buffer_trigger;
-    
+    PitchDSP *dsp;
+    unsigned int rate, channels;
+
     /* user tunables */
     int             halfnote;
     double          finetune, drywet;

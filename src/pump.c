@@ -773,6 +773,10 @@ pump_cmdline(char **argv, int argc)
             continue;
         }
         effect = effect_create(k);
+        if (!effect) {
+            gnuitar_printf("Could not create effect %s.\n", argv[i]);
+            continue;
+        }
         effect_insert(effect, -1);
         gtk_clist_append(GTK_CLIST(processor), &argv[i]);
     }
@@ -892,6 +896,12 @@ load_pump(const char *fname)
 	}
 
         effect = effect_create_without_init(j);
+        if (!effect) {
+            gnuitar_printf("Could not create effect %s.\n", effect_name);
+            free(effect_name);
+            free(gtmp);
+            continue;
+        }
 
 	/* read enabled flag */
 	effect->toggle = g_key_file_get_integer(preset, gtmp, "enabled", &error);

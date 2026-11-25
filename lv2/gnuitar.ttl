@@ -2438,3 +2438,145 @@ gt:autowah-stereo
         lv2:minimum 0.0 ;
         lv2:maximum 1.0
     ] .
+
+gt:pitch-shift-mono
+    a lv2:Plugin , lv2:PitchPlugin ;
+    doap:name "GNUitar Pitch Shift (Mono)" ;
+    doap:license <COPYING> ;
+    lv2:minorVersion 0 ;
+    lv2:microVersion 1 ;
+    lv2:port
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 0 ;
+        lv2:symbol "in" ;
+        lv2:name "Input"
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 1 ;
+        lv2:symbol "out" ;
+        lv2:name "Output"
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 2 ;
+        lv2:symbol "semitones" ;
+        lv2:name "Pitch" ;
+        lv2:default 0.0 ;
+        lv2:minimum -24.0 ;
+        lv2:maximum 12.0 ;
+        units:unit units:semitone12TET ;
+        lv2:portProperty lv2:integer
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 3 ;
+        lv2:symbol "fine_cents" ;
+        lv2:name "Fine Tune" ;
+        lv2:default 0.0 ;
+        lv2:minimum -50.0 ;
+        lv2:maximum 50.0 ;
+        units:unit units:cent
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 4 ;
+        lv2:symbol "wet_pct" ;
+        lv2:name "Wet" ;
+        lv2:default 100.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 100.0 ;
+        units:unit units:pc
+    ],
+    [
+        a lv2:OutputPort , lv2:ControlPort ;
+        lv2:index 5 ;
+        lv2:symbol "latency" ;
+        lv2:name "Latency" ;
+        lv2:designation lv2:latency ;
+        lv2:portProperty lv2:integer ;
+        units:unit units:frame
+    ] .
+
+gt:pitch-shift-stereo
+    a lv2:Plugin , lv2:PitchPlugin ;
+    doap:name "GNUitar Pitch Shift (Stereo)" ;
+    doap:license <COPYING> ;
+    lv2:minorVersion 0 ;
+    lv2:microVersion 1 ;
+    pg:mainInput gt:stereo-input ;
+    pg:mainOutput gt:stereo-output ;
+    lv2:port
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 0 ;
+        lv2:symbol "in_l" ;
+        lv2:name "Input Left" ;
+        pg:group gt:stereo-input ;
+        lv2:designation pg:left
+    ],
+    [
+        a lv2:InputPort , lv2:AudioPort ;
+        lv2:index 1 ;
+        lv2:symbol "in_r" ;
+        lv2:name "Input Right" ;
+        pg:group gt:stereo-input ;
+        lv2:designation pg:right
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 2 ;
+        lv2:symbol "out_l" ;
+        lv2:name "Output Left" ;
+        pg:group gt:stereo-output ;
+        lv2:designation pg:left
+    ],
+    [
+        a lv2:OutputPort , lv2:AudioPort ;
+        lv2:index 3 ;
+        lv2:symbol "out_r" ;
+        lv2:name "Output Right" ;
+        pg:group gt:stereo-output ;
+        lv2:designation pg:right
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 4 ;
+        lv2:symbol "semitones" ;
+        lv2:name "Pitch" ;
+        lv2:default 0.0 ;
+        lv2:minimum -24.0 ;
+        lv2:maximum 12.0 ;
+        units:unit units:semitone12TET ;
+        lv2:portProperty lv2:integer
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 5 ;
+        lv2:symbol "fine_cents" ;
+        lv2:name "Fine Tune" ;
+        lv2:default 0.0 ;
+        lv2:minimum -50.0 ;
+        lv2:maximum 50.0 ;
+        units:unit units:cent
+    ],
+    [
+        a lv2:InputPort , lv2:ControlPort ;
+        lv2:index 6 ;
+        lv2:symbol "wet_pct" ;
+        lv2:name "Wet" ;
+        lv2:default 100.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 100.0 ;
+        units:unit units:pc
+    ],
+    [
+        a lv2:OutputPort , lv2:ControlPort ;
+        lv2:index 7 ;
+        lv2:symbol "latency" ;
+        lv2:name "Latency" ;
+        lv2:designation lv2:latency ;
+        lv2:portProperty lv2:integer ;
+        units:unit units:frame
+    ] .
