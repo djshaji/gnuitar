@@ -157,3 +157,13 @@ gt:rotary-speaker-mono-to-stereo
     a lv2:Plugin ;
     lv2:binary <gnuitar.so> ;
     rdfs:seeAlso <gnuitar.ttl> .
+
+gt:autowah-mono
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
+
+gt:autowah-stereo
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .

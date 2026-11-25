@@ -1,8 +1,8 @@
 # GNUitar LV2 plugins
 
 The Linux bundle provides Digital Amp, Tremolo, Tremolo Bar, Noise Gate,
-Sustain, Distort, Overdrive, Eq Bank, Delay, Echo, Reverb, Chorus / Flanger, Phaser, and Rotary Speaker.
-All effects except Rotary Speaker have mono and stereo variants. Delay, Echo,
+Sustain, Distort, Overdrive, Eq Bank, Delay, Echo, Reverb, Chorus / Flanger, Phaser, Rotary Speaker,
+and Autowah. All effects except Rotary Speaker have mono and stereo variants. Delay, Echo,
 Chorus / Flanger, Phaser, and Rotary Speaker have mono-to-stereo variants. Controls take effect at host block boundaries.
 
 - Digital Amp and Tremolo use the same calculations as the standalone app
@@ -54,6 +54,11 @@ Chorus / Flanger, Phaser, and Rotary Speaker have mono-to-stereo variants. Contr
 - Rotary Speaker uses the original Hilbert split and filtered crossfeed.
   Its period follows the standalone control, with two rotations per
   indicated period.
+- Autowah offers Lowpass, Bandpass, Moog Ladder, and TB-303 models.
+  Envelope mode listens to both input channels in stereo. Continuous Sweep
+  cycles between the frequency settings. Pedal mode uses the 0–1 Pedal
+  Position control, which hosts can automate or map to an expression pedal.
+  The sweep and filter coefficients update every 64 audio frames.
 
 ## Build and test
 

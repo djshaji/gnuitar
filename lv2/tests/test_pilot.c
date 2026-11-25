@@ -1016,6 +1016,95 @@ test_spatial(const LV2_Descriptor *descriptor, const char *path, double rate,
     descriptor->cleanup(handle);
 }
 
+static void
+test_autowah(const LV2_Descriptor *descriptor, double rate, uint32_t channels,
+             const char *bundle_path)
+{
+    enum { count = 12289, model_count = 4, mode_count = 3 };
+    Plugin plugin = open_plugin(descriptor, channels, rate, bundle_path);
+    float signal[count], quiet[count] = {0};
+    float input_l[count], input_r[count], out_l[count], out_r[count];
+    float settings[] = {100.0f, 80.0f, 5000.0f, 100.0f, 100.0f, 0.0f, 0.0f, 1.0f};
+    uint32_t control, frame, model, mode;
+    float fingerprints[model_count][mode_count];
+
+    for (control = 0; control < sizeof(settings) / sizeof(settings[0]); ++control)
+        connect_control(plugin, control, &settings[control]);
+    for (frame = 0; frame < count; ++frame) {
+        double time = frame / rate;
+        double level = time < 0.01 ? 0.0 : time < 0.08 ? 0.35 : 0.13;
+        signal[frame] = (float) (level * (sin(TWO_PI * 227 * time) + sin(TWO_PI * 1763 * time)));
+    }
+
+    for (model = 0; model < model_count; ++model) {
+        settings[6] = (float) model;
+        for (mode = 0; mode < mode_count; ++mode) {
+            uint32_t offset = 0, block = 0;
+            float *audible = channels == 2 ? out_r : out_l;
+            float peak = 0.0f;
+            settings[5] = (float) mode;
+
+            descriptor->activate(plugin.handle);
+            /* A right-only signal must trigger the linked stereo envelope. */
+            connect_audio(plugin, channels == 2 ? quiet : signal, signal, out_l, out_r);
+            out_l[0] = 42.0f;
+            descriptor->run(plugin.handle, 0);
+            CHECK(out_l[0] == 42.0f);
+            descriptor->run(plugin.handle, count);
+            for (frame = 0; frame < count; ++frame) {
+                CHECK(isfinite(audible[frame]) && fabsf(audible[frame]) < 30.0f);
+                peak = fmaxf(peak, fabsf(audible[frame]));
+                if (channels == 2)
+                    check_audio(out_l[frame], 0.0f);
+            }
+            CHECK(peak > 0.001f);
+            fingerprints[model][mode] = peak;
+
+            memcpy(input_l, channels == 2 ? quiet : signal, sizeof(input_l));
+            memcpy(input_r, signal, sizeof(input_r));
+            descriptor->activate(plugin.handle);
+            while (offset < count) {
+                const uint32_t sizes[] = {0, 1, 31, 2, 263, 65, 7, 512};
+                uint32_t n = sizes[block++ % (sizeof(sizes) / sizeof(sizes[0]))];
+                if (n > count - offset)
+                    n = count - offset;
+                connect_audio(plugin, input_l + offset, input_r + offset,
+                              (channels == 2 ? input_r : input_l) + offset, input_l + offset);
+                descriptor->run(plugin.handle, n);
+                offset += n;
+            }
+            CHECK(memcmp(channels == 2 ? input_r : input_l, out_l, sizeof(out_l)) == 0);
+            if (channels == 2)
+                CHECK(memcmp(input_l, out_r, sizeof(out_r)) == 0);
+        }
+    }
+    for (model = 0; model < model_count; ++model) {
+        CHECK(fabsf(fingerprints[model][0] - fingerprints[model][1]) > 0.0001f);
+        CHECK(fabsf(fingerprints[model][1] - fingerprints[model][2]) > 0.0001f);
+        if (model != 0)
+            CHECK(fabsf(fingerprints[model][2] - fingerprints[model - 1][2]) > 0.0001f);
+    }
+
+    /* Automating the normalized pedal during a run changes the cutoff. */
+    settings[5] = 2.0f;
+    settings[6] = 1.0f;
+    settings[7] = 0.0f;
+    descriptor->activate(plugin.handle);
+    connect_audio(plugin, signal, signal, out_l, out_r);
+    descriptor->run(plugin.handle, count);
+    memcpy(input_l, out_l, sizeof(out_l));
+    descriptor->activate(plugin.handle);
+    descriptor->run(plugin.handle, count / 2);
+    settings[7] = 1.0f;
+    connect_audio(plugin, signal + count / 2, signal + count / 2,
+                  out_l + count / 2, out_r + count / 2);
+    descriptor->run(plugin.handle, count - count / 2);
+    CHECK(memcmp(out_l, input_l, (count / 2) * sizeof(float)) == 0);
+    CHECK(memcmp(out_l + count / 2, input_l + count / 2,
+                 (count - count / 2) * sizeof(float)) != 0);
+    descriptor->cleanup(plugin.handle);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1034,6 +1123,7 @@ main(int argc, char **argv)
         URI_PREFIX "chorus-mono", URI_PREFIX "chorus-stereo", URI_PREFIX "chorus-mono-to-stereo",
         URI_PREFIX "phaser-mono", URI_PREFIX "phaser-stereo", URI_PREFIX "phaser-mono-to-stereo",
         URI_PREFIX "rotary-speaker-mono-to-stereo",
+        URI_PREFIX "autowah-mono", URI_PREFIX "autowah-stereo",
     };
     const LV2_Descriptor *(*get_descriptor)(uint32_t);
     void *library;
@@ -1062,6 +1152,12 @@ main(int argc, char **argv)
         const LV2_Descriptor *descriptor = get_descriptor(i);
         uint32_t channels = i % 2 + 1;
         CHECK(descriptor && strcmp(descriptor->URI, uris[i]) == 0);
+        if (i >= 31) {
+            test_autowah(descriptor, 44100.0, i == 31 ? 1 : 2, bundle_path);
+            test_autowah(descriptor, 48000.0, i == 31 ? 1 : 2, bundle_path);
+            test_autowah(descriptor, 96000.0, i == 31 ? 1 : 2, bundle_path);
+            continue;
+        }
         if (i >= 27) {
             const double rates[] = {44100.0, 48000.0, 96000.0};
             uint32_t rate;
