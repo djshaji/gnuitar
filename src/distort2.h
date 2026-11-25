@@ -24,17 +24,14 @@
 #define _DISTORT2_H_ 1
 
 #include "effect.h"
-#include "biquad.h"
+#include "dsp/overdrive_dsp.h"
 
 effect_t *distort2_create(void);
 
 struct distort2_params {
-    float       drive, clip, treble;
-    float 	last[MAX_CHANNELS];
-
-    DSP_SAMPLE  interpolate_firmem[MAX_CHANNELS][8];
-    Biquad_t    feedback_minus_loop, output_bass_cut,
-                rolloff, treble_highpass;
+    float drive, clip, treble;
+    unsigned int rate;
+    OverdriveDSP dsp;
 };
 
 #endif
