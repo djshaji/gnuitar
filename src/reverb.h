@@ -24,20 +24,12 @@
 #define _REVERB_H_ 1
 
 #include "effect.h"
-#include "backbuf.h"
+#include "dsp/reverb_chorus_dsp.h"
 
 effect_t *   reverb_create(void);
 
-struct reverbBuffer {
-    DSP_SAMPLE     *data;
-    int             nChunks;
-    int             nCursor;
-};
-
 struct reverb_params {
-    Backbuf_t      *history[MAX_CHANNELS];
-    Backbuf_t      *ap[MAX_CHANNELS][3];
-    Backbuf_t      *comb[MAX_CHANNELS];
+    Backbuf_t *history[MAX_CHANNELS][GNUITAR_REVERB_LINES];
     double          drywet,
                     regen,
                     delay;

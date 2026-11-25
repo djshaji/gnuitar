@@ -32,7 +32,7 @@
 #include "reverb.h"
 #include "gui.h"
 
-#define MAX_REVERB_SIZE  3000 /* ms */
+#define MAX_REVERB_SIZE GNUITAR_REVERB_MAX_MS
 
 static void
 update_reverb_drywet(GtkAdjustment *adj, struct reverb_params *params)
@@ -169,103 +169,20 @@ reverb_init(struct effect *p)
 
 }
 
-/* backbuf-based allpass filter for longer than 1 or 2 sample delays.
- * This */
-static double
-allpass_filter(double input, double factor, int delay, Backbuf_t *history)
-{
-    double tmp, output;
-
-    // delay - 1 because 0th is already the previous, so someone asking
-    // for the previous sample is really asking for the 0th sample until
-    // add() is performed
-    tmp = input - factor * history->get(history, delay - 1);
-    output = history->get(history, delay - 1) + factor * tmp;
-    history->add(history, tmp);
-    return output;
-}
-
-static double
-comb_filter(double input, double factor, int delay, Backbuf_t *history)
-{
-    double output;
-    history->add(history, input); // 0th is current, -1 is previous
-    output = input + factor * history->get(history, delay);
-    return output;
-}
-
 static void
 reverb_filter(struct effect *p, data_block_t *db)
 {
     struct reverb_params *params = p->params;
-    DSP_SAMPLE     *s;
-    int             count,
-                    c = 0; /* curr_channel */
-    float           input, a, mono, Dry, Wet, Rgn, Delay, fsr;
+    ReverbTaps taps = gnuitar_reverb_taps(sample_rate, params->delay,
+                                          params->drywet, params->regen);
+    int frame, channel;
 
-    s = db->data;
-    count = db->len;
-
-    Delay = params->delay / 1000.0 * sample_rate;
-    Wet = params->drywet / 100.0;
-    Dry = 1 - Wet;
-    Rgn = params->regen / 100.0;
-    
-    /* This is a John Chowning reverberator, explained here:
-     * http://www-ccrma.stanford.edu/~jos/waveguide/Schroeder_Reverberator_called_JCRev.html
-     *
-     * Signal block diagram is as follows:
-     *
-     * input--[ ap(0.7, 1051) ]--[ ap(0.7, 337)]--[ ap(0.7, 113) ]--a
-     *
-     *    +--[ comb(0.742, 4799) ]--+
-     *    |                         |
-     *    +--[ comb(0.733, 4999) ]--+
-     * a--+                        (+)--mono
-     *    +--[ comb(0.715, 5399) ]--+
-     *    |                         |
-     *    +--[ comb(0.697, 5801) ]--+
-     * 
-     * In case multichannel output is desired, the output is further processed
-     * with:
-     *
-     *       +--[ delay(0.046 * sample_rate) ]--ch1
-     *       |                                  
-     *       +--[ delay(0.057 * sample_rate) ]--ch2
-     * mono--+
-     *       +--[ delay(0.041 * sample_rate) ]--ch3
-     *       |
-     *       +--[ delay(0.054 * sample_rate) ]--ch4
-     *
-     * For stereo output, the channels 1, 2 and 3, 4 are averaged.
-     */
-
-    fsr = sample_rate / 44100;
-    while (count) {
-        input = *s;
-
-        /* change from original: infinite reverb through history */
-        input += params->history[c]->get(params->history[c], Delay) * Rgn;
-        
-        a = allpass_filter(input, 0.7, 1051 * fsr, params->ap[c][0]);
-        a = allpass_filter(a,     0.7,  337 * fsr, params->ap[c][1]);
-        a = allpass_filter(a,     0.7,  113 * fsr, params->ap[c][2]);
-        
-        mono  = comb_filter(a, 0.742, 4799 * fsr, params->comb[c]);
-        mono += comb_filter(a, 0.733, 4999 * fsr, params->comb[c]);
-        mono += comb_filter(a, 0.715, 5399 * fsr, params->comb[c]);
-        mono += comb_filter(a, 0.697, 5801 * fsr, params->comb[c]);
-        /* change from original: some more reverb terms */
-        mono += comb_filter(a, 0.75, 3533 * fsr, params->comb[c]);
-        mono += comb_filter(a, 0.65, 6521 * fsr, params->comb[c]);
-        
-        params->history[c]->add(params->history[c], mono / 6.0);
-        
-        *s = *s * Dry + mono * Wet;
-
-        c = (c + 1) % db->channels;
-        s++;
-        count--;
+    for (frame = 0; frame < db->len / db->channels; ++frame) {
+        for (channel = 0; channel < db->channels; ++channel) {
+            DSP_SAMPLE *sample = &db->data[frame * db->channels + channel];
+            *sample = gnuitar_reverb_sample(params->history[channel], *sample,
+                                            &taps, INFINITY);
+        }
     }
 }
 
@@ -273,18 +190,14 @@ static void
 reverb_done(struct effect *p)
 {
     struct reverb_params *dr;
-    int             i;
-    
-    dr = (struct reverb_params *) p->params;
+    int channel, line;
 
-    for (i = 0; i < MAX_CHANNELS; i += 1) {
-        free(dr->history[i]);
-        del_Backbuf(dr->ap[i][0]);
-        del_Backbuf(dr->ap[i][1]);
-        del_Backbuf(dr->ap[i][2]);
-        del_Backbuf(dr->comb[i]);
+    dr = p->params;
+    for (channel = 0; channel < MAX_CHANNELS; ++channel) {
+        for (line = 0; line < GNUITAR_REVERB_LINES; ++line)
+            del_Backbuf(dr->history[channel][line]);
     }
-    
+
     free(p->params);
     gtk_widget_destroy(p->control);
     free(p);
@@ -315,8 +228,9 @@ reverb_create()
 {
     effect_t       *p;
     struct reverb_params *dr;
-    int             i;
-    
+    unsigned int rate = sample_rate > MAX_SAMPLE_RATE ? sample_rate : MAX_SAMPLE_RATE;
+    int i, line;
+
     p = calloc(1, sizeof(effect_t));
     p->params = calloc(1, sizeof(struct reverb_params));
 
@@ -327,12 +241,9 @@ reverb_create()
     p->proc_load = reverb_load;
     p->proc_save = reverb_save;
     dr = (struct reverb_params *) p->params;
-    for (i = 0; i < MAX_CHANNELS; i += 1) {
-        dr->history[i] = new_Backbuf(MAX_REVERB_SIZE / 1000.0 * MAX_SAMPLE_RATE);
-        dr->ap[i][0] = new_Backbuf(2048);
-        dr->ap[i][1] = new_Backbuf(2048);
-        dr->ap[i][2] = new_Backbuf(2048);
-        dr->comb[i] = new_Backbuf(8192);
+    for (i = 0; i < MAX_CHANNELS; ++i) {
+        for (line = 0; line < GNUITAR_REVERB_LINES; ++line)
+            dr->history[i][line] = new_Backbuf(gnuitar_reverb_capacity(line, rate));
     }
     dr->delay  = 130;    /* ms */
     dr->drywet = 25.0;
