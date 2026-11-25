@@ -1,0 +1,28 @@
+cmake_minimum_required(VERSION 3.19)
+
+execute_process(COMMAND "${LV2LS}" OUTPUT_VARIABLE available OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND_ERROR_IS_FATAL ANY)
+string(REPLACE "\n" ";" discovered "${available}")
+list(LENGTH discovered count)
+if(NOT count EQUAL 4)
+    message(FATAL_ERROR "Expected exactly four plugins, found: ${discovered}")
+endif()
+
+function(check_ports effect layout)
+    set(uri "https://github.com/djshaji/gnuitar#${effect}-${layout}")
+    if(NOT uri IN_LIST discovered)
+        message(FATAL_ERROR "Plugin discovery failed for ${uri}")
+    endif()
+    execute_process(COMMAND "${LV2INFO}" "${uri}" OUTPUT_VARIABLE info
+        COMMAND_ERROR_IS_FATAL ANY)
+    string(REGEX MATCHALL "Symbol:[ \t]+[a-z_]+" symbol_lines "${info}")
+    string(REGEX REPLACE "Symbol:[ \t]+" "" symbols "${symbol_lines}")
+    if(NOT "${symbols}" STREQUAL "${ARGN}")
+        message(FATAL_ERROR "${uri}: expected ports ${ARGN}, got ${symbols}")
+    endif()
+endfunction()
+
+check_ports(digital-amp mono in out gain_db)
+check_ports(digital-amp stereo in_l in_r out_l out_r gain_db)
+check_ports(tremolo mono in out period_ms depth_pct)
+check_ports(tremolo stereo in_l in_r out_l out_r period_ms depth_pct)

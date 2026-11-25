@@ -29,6 +29,7 @@
  */
 
 #include "amp.h"
+#include "dsp/amp_dsp.h"
 #include "gui.h"
 #include <assert.h>
 #include <string.h>
@@ -122,7 +123,7 @@ amp_filter(effect_t *p, data_block_t *db)
     int             i;
     float           power;
 
-    power = pow(10, params->amp_power / 20.0);
+    power = gnuitar_amp_gain(params->amp_power);
     for (i = 0; i < db->len; i++)
         db->data[i] *= power;
 }

@@ -118,6 +118,7 @@
  */
 
 #include "tremolo.h"
+#include "dsp/tremolo_dsp.h"
 #include <math.h>
 #include <stdlib.h>
 #ifndef _WIN32
@@ -240,32 +241,20 @@ tremolo_init(struct effect *p)
 static void
 tremolo_filter(struct effect *p, data_block_t *db)
 {
-    struct tremolo_params *tp;
-    double          vol, speed;
-    int             count,
-                    currchannel = 0;
-    DSP_SAMPLE     *s;
+    struct tremolo_params *tp = p->params;
+    double period = gnuitar_tremolo_period(tp->tremolo_speed, sample_rate);
+    DSP_SAMPLE *s = db->data;
+    int frame, channel;
 
-    tp = p->params;
-    s = db->data;
-    count = db->len;
-    
-    speed = tp->tremolo_speed / 1000.0 * sample_rate;
-    
-    while (count) {
-	if (tp->tremolo_phase >= speed)
-	    tp->tremolo_phase = 0;
+    if (!(period > 0.0))
+        return;
 
-	vol = 1.0 - tp->tremolo_amplitude / 100.0 *
-	    (1.0 + sin_lookup(tp->tremolo_phase / speed)) / 2.0;
-	*s *= vol;
-
-	currchannel = (currchannel + 1) % db->channels;
-	if (currchannel == 0)
-	    tp->tremolo_phase++;
-
-	s++;
-	count--;
+    for (frame = 0; frame < db->len / db->channels; ++frame) {
+        double gain = gnuitar_tremolo_gain(&tp->tremolo_phase, period,
+                                          tp->tremolo_amplitude,
+                                          sin_lookup_table, SIN_LOOKUP_SIZE);
+        for (channel = 0; channel < db->channels; ++channel)
+            *s++ *= gain;
     }
 }
 
