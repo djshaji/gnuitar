@@ -2,8 +2,8 @@
 
 The Linux bundle provides Digital Amp, Tremolo, Tremolo Bar, Noise Gate,
 Sustain, Distort, Overdrive, Eq Bank, Delay, Echo, Reverb, Chorus / Flanger,
-Phaser, Rotary Speaker, Autowah, Pitch Shift, and Tube Amplifier. All effects except Rotary
-Speaker have mono and stereo variants. Delay, Echo, Chorus / Flanger, Phaser,
+Phaser, Rotary Speaker, Autowah, Pitch Shift, Tube Amplifier, and Tuner. All effects except
+Rotary Speaker have mono and stereo variants. Delay, Echo, Chorus / Flanger, Phaser,
 and Rotary Speaker have mono-to-stereo variants. Controls are read at host
 block boundaries.
 
@@ -75,6 +75,15 @@ block boundaries.
   the rate required by the original WAV-to-coefficients script. The source
   WAVs and a separate recording provenance record are absent from the
   repository.
+- Tuner passes audio through at zero latency. Its time-domain detector
+  analyzes a single note from 27.5 to 400 Hz and updates every 20 ms.
+  Stereo analyzes the average of both inputs and passes them through
+  independently. Use one input for sources that cancel when summed.
+  The output meters report frequency, nearest MIDI note, deviation in
+  cents (A4 = 440 Hz), and validity. An invalid reading is 0 Hz, MIDI
+  note −1, and 0 cents. The detector is shared with standalone builds
+  that use the time-domain backend. Hosts can display the control
+  outputs in their generic plugin UI if supported.
 
 ## Build and test
 

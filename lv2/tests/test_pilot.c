@@ -1344,6 +1344,109 @@ test_tubeamp(const LV2_Descriptor *descriptor, double rate, uint32_t channels,
     free(memory);
 }
 
+static void
+test_tuner(const LV2_Descriptor *descriptor, double rate, uint32_t channels, const char *bundle_path)
+{
+    const struct { int note; double cents; } tones[] = {
+        {21, 0}, {23, 13}, {28, -16}, {40, 0}, {45, 22}, {57, -19}, {64, 12}
+    };
+    const float invalid[] = {0, -1, 0, 0};
+    const uint32_t count = (uint32_t) (rate * 0.3);
+    const size_t bytes = count * sizeof(float);
+    Plugin plugin = open_plugin(descriptor, channels, rate, bundle_path);
+    float *memory = calloc(4, bytes);
+    float *left, *right, *out_l, *out_r;
+    float reading[4], expected[4];
+    uint32_t i, tone, offset;
+
+    CHECK(memory);
+    left = memory;
+    right = left + count;
+    out_l = right + count;
+    out_r = out_l + count;
+    for (i = 0; i < 4; ++i)
+        connect_control(plugin, i, &reading[i]);
+
+    for (tone = 0; tone < sizeof(tones) / sizeof(tones[0]) + 1; ++tone) {
+        const int edge = tone == sizeof(tones) / sizeof(tones[0]);
+        const int note = edge ? 67 : tones[tone].note;
+        const double frequency = edge ? 400.0 :
+            440.0 * exp2((note - 69.0 + 0.01 * tones[tone].cents) / 12.0);
+        const double cents = 100.0 * (69.0 + 12.0 * log2(frequency / 440.0) - note);
+
+        for (i = 0; i < count; ++i) {
+            double phase = TWO_PI * frequency * i / rate;
+            double onset = 0.3 * exp(-3.0 * i / rate);
+            left[i] = (float) (onset * (sin(phase) + (edge ? 0.0 :
+                       0.8 * sin(2 * phase) + 0.3 * sin(3 * phase))));
+            right[i] = (tone % 2) ? left[i] : 0.0f;
+        }
+        descriptor->activate(plugin.handle);
+        connect_audio(plugin, left, right, out_l, out_r);
+        descriptor->run(plugin.handle, 0);
+        CHECK(memcmp(reading, invalid, sizeof(reading)) == 0);
+        descriptor->run(plugin.handle, count);
+        CHECK(memcmp(left, out_l, bytes) == 0);
+        if (channels == 2)
+            CHECK(memcmp(right, out_r, bytes) == 0);
+        if (reading[3] != 1.0f || reading[1] != note || fabs(reading[2] - cents) >= 1.0) {
+            fprintf(stderr, "Tuner %.0f Hz host rate: expected %.4f Hz and %.2f cents, got "
+                    "%.4f Hz, note %.0f, %.2f cents, valid %.0f\n",
+                    rate, frequency, cents, reading[0], reading[1], reading[2], reading[3]);
+            exit(EXIT_FAILURE);
+        }
+        CHECK(fabs(1200.0 * log2(reading[0] / frequency)) < 1.0);
+        memcpy(expected, reading, sizeof(expected));
+
+        descriptor->activate(plugin.handle);
+        for (offset = 0; offset < count;) {
+            uint32_t block = offset % 127 + 1;
+            if (block > count - offset)
+                block = count - offset;
+            connect_audio(plugin, left + offset, right + offset,
+                          (channels == 2 ? right : left) + offset, left + offset);
+            descriptor->run(plugin.handle, block);
+            offset += block;
+        }
+        CHECK(memcmp(reading, expected, sizeof(reading)) == 0);
+        CHECK(memcmp(channels == 2 ? right : left, out_l, bytes) == 0);
+        if (channels == 2)
+            CHECK(memcmp(left, out_r, bytes) == 0);
+    }
+
+    memset(left, 0, bytes);
+    memset(right, 0, bytes);
+    connect_audio(plugin, left, right, out_l, out_r);
+    descriptor->run(plugin.handle, (uint32_t) (rate * 0.06));
+    CHECK(memcmp(reading, invalid, sizeof(reading)) == 0);
+
+    for (i = 0; i < count; ++i)
+        left[i] = right[i] = 0.3f;
+    descriptor->activate(plugin.handle);
+    descriptor->run(plugin.handle, count);
+    CHECK(memcmp(reading, invalid, sizeof(reading)) == 0);
+
+    for (i = 0; i < count; ++i)
+        left[i] = right[i] = (float) (0.3 * sin(TWO_PI * 440.0 * i / rate));
+    descriptor->activate(plugin.handle);
+    descriptor->run(plugin.handle, count);
+    CHECK(memcmp(reading, invalid, sizeof(reading)) == 0);
+
+    if (channels == 2) {
+        for (i = 0; i < count; ++i) {
+            left[i] = (float) (0.3 * sin(TWO_PI * 110.0 * i / rate));
+            right[i] = -left[i];
+        }
+        descriptor->activate(plugin.handle);
+        descriptor->run(plugin.handle, count);
+        CHECK(memcmp(reading, invalid, sizeof(reading)) == 0);
+        CHECK(memcmp(left, out_l, bytes) == 0);
+        CHECK(memcmp(right, out_r, bytes) == 0);
+    }
+    descriptor->cleanup(plugin.handle);
+    free(memory);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1365,6 +1468,7 @@ main(int argc, char **argv)
         URI_PREFIX "autowah-mono", URI_PREFIX "autowah-stereo",
         URI_PREFIX "pitch-shift-mono", URI_PREFIX "pitch-shift-stereo",
         URI_PREFIX "tube-amplifier-mono", URI_PREFIX "tube-amplifier-stereo",
+        URI_PREFIX "tuner-mono", URI_PREFIX "tuner-stereo",
     };
     const LV2_Descriptor *(*get_descriptor)(uint32_t);
     void *library;
@@ -1393,6 +1497,13 @@ main(int argc, char **argv)
         const LV2_Descriptor *descriptor = get_descriptor(i);
         uint32_t channels = i % 2 + 1;
         CHECK(descriptor && strcmp(descriptor->URI, uris[i]) == 0);
+        if (i >= 37) {
+            const double rates[] = {8000.0, 44100.0, 48000.0, 96000.0, 384000.0};
+            unsigned int rate;
+            for (rate = 0; rate < sizeof(rates) / sizeof(rates[0]); ++rate)
+                test_tuner(descriptor, rates[rate], i == 37 ? 1 : 2, bundle_path);
+            continue;
+        }
         if (i >= 35) {
             const double rates[] = {44100.0, 48000.0, 96000.0};
             unsigned int rate;

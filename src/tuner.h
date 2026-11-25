@@ -74,6 +74,7 @@
 #endif
 
 #include "backbuf.h"
+#include "dsp/tuner_dsp.h"
 
 extern effect_t *   tuner_create(void);
 
@@ -82,16 +83,15 @@ extern effect_t *   tuner_create(void);
 
 /* data defined in order of progressive refinements */
 struct tuner_params {
+#ifdef HAVE_FFTW3
     /* backlog of sample data */
     Backbuf_t	    *history;
 
-#ifdef HAVE_FFTW3
     /* fftw3 state */
     fftwf_complex  *fftin;
     fftwf_plan      fftfw;
     fftwf_plan      fftbw;
     int             count;
-#endif
     
     /* signal processing helpers */
     float	    power;
@@ -101,6 +101,9 @@ struct tuner_params {
     float	    freq_history[FREQ_SIZE];
     int		    freq_index;
     float	    sorted_freq_history[FREQ_SIZE];
+#else
+    TunerDSP        dsp;
+#endif
 
     /* final frequency */
     float	    freq;
