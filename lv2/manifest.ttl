@@ -1,0 +1,24 @@
+@prefix gt: <https://github.com/djshaji/gnuitar#> .
+@prefix lv2: <http://lv2plug.in/ns/lv2core#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+
+gt:digital-amp-mono
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
+
+gt:digital-amp-stereo
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
+
+gt:tremolo-mono
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
+
+gt:tremolo-stereo
+    a lv2:Plugin ;
+    lv2:binary <gnuitar.so> ;
+    rdfs:seeAlso <gnuitar.ttl> .
