@@ -267,7 +267,7 @@ static inline DSP_SAMPLE
 gnuitar_tube_sample(TubeAmpDSP *state, DSP_SAMPLE input, int channel, const TubeAmpControls *controls)
 {
     static const float resistance[] = {68e3 / 3000, 250e3 / 3000, 250e3 / 3000, 250e3 / 3000};
-    static const float bias_gain[] = {2700 / 100000.0, 1500 / 100000.0, 820 / 1000000.0, 820 / 1000000.0};
+    static const float bias_gain[] = {2700 / 100000.0, 1500 / 100000.0, 820 / 1000000.0, 820 / 100000.0};
     DSP_SAMPLE *history = state->history[channel] + state->cursor[channel];
     float result = 0.0f;
     int sub, stage;
