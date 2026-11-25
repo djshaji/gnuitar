@@ -75,56 +75,22 @@ static void
 rotary_filter(struct effect *p, data_block_t *db)
 {
     struct rotary_params *params = p->params;
-    int i;
-    float pha, sinval = 0, cosval = 0;
-    DSP_SAMPLE *tmp;
-    
-    if (db->channels != 1 || n_output_channels < 2)
+    DSP_SAMPLE *input = db->data;
+    double step;
+    int frame;
+
+    if (db->channels != 1 || n_output_channels < 2 || !sample_rate || params->speed <= 0)
         return;
-    
-    /* The rotary speaker simulation is based on modulating input with subsonic
-     * sinuswave and then separating the upwards and downwards shifted frequencies
-     * with hilbert transform. The upwards shifted component can be thought to be
-     * the horn, and the downwards shifted component the bass speaker. (After
-     * a half-turn, the "bass" will shift up and the "horn" will shift down.)
-     *
-     * After the separation step, a rough approximation of HRTF is used to mix the
-     * horn with the bass speaker for both channels. */
+
+    gnuitar_rotary_set_rate(&params->dsp, sample_rate);
+    /* The original rotation advances twice per period setting. */
+    step = 2000.0 / params->speed / sample_rate;
+    for (frame = 0; frame < db->len; ++frame)
+        gnuitar_rotary_spread(&params->dsp, input[frame], step, db->data_swap + 2 * frame);
+    db->data = db->data_swap;
+    db->data_swap = input;
     db->channels = 2;
     db->len *= 2;
-
-    pha = params->phase;
-    for (i = 0; i < db->len/2; i += 1) {
-        DSP_SAMPLE x0, x1, y0, y1;
-
-        /* update the approximation of sin and cos values to avoid
-         * discontinuities between audio blocks */
-        if (i % 8 == 0) {
-            sinval = sin_lookup(pha);
-            cosval = cos_lookup(pha);
-            pha += (float) 16 / sample_rate * 1000.0 / params->speed;
-            // params->speed;
-            if (pha >= 1.0)
-                pha -= 1.0;
-        }
-
-        /* compute separate f + fc and f - fc outputs */
-        hilbert_transform(db->data[i], &x0, &x1, &params->hilb, 0);
-        y0 = cosval * x0 + sinval * x1;
-        y1 = cosval * x0 - sinval * x1;
-
-        /* factor and biquad estimate hrtf */
-        db->data_swap[i*2+0] = 0.60 * y0 + 0.40 * do_biquad(y1, &params->ld, 0);
-        db->data_swap[i*2+1] = 0.60 * y1 + 0.40 * do_biquad(y0, &params->rd, 0);
-    }
-
-    params->phase += (float) db->len / sample_rate * 1000.0 / params->speed;
-    if (params->phase >= 1.0)
-        params->phase -= 1.0;
-
-    tmp = db->data;
-    db->data = db->data_swap;
-    db->data_swap = tmp;
 }
 
 static void
@@ -165,12 +131,7 @@ rotary_create()
     p->proc_done = rotary_done;
 
     params->speed = 1000;
-    params->unread_output = 0;
+    gnuitar_rotary_reset(&params->dsp, sample_rate);
 
-    set_rc_lowpass_biquad(sample_rate, 2000, &params->ld);
-    set_rc_lowpass_biquad(sample_rate, 2000, &params->rd);
-
-    hilbert_init(&params->hilb);
-    
     return p;
 }

@@ -1,9 +1,9 @@
 # GNUitar LV2 plugins
 
 The Linux bundle provides Digital Amp, Tremolo, Tremolo Bar, Noise Gate,
-Sustain, Distort, Overdrive, Eq Bank, Delay, Echo, Reverb, and Chorus / Flanger.
-Each effect has mono and stereo variants. Delay, Echo, and Chorus / Flanger
-also have dedicated mono-to-stereo variants. Controls take effect at host block boundaries.
+Sustain, Distort, Overdrive, Eq Bank, Delay, Echo, Reverb, Chorus / Flanger, Phaser, and Rotary Speaker.
+All effects except Rotary Speaker have mono and stereo variants. Delay, Echo,
+Chorus / Flanger, Phaser, and Rotary Speaker have mono-to-stereo variants. Controls take effect at host block boundaries.
 
 - Digital Amp and Tremolo use the same calculations as the standalone app
   directly on normalized LV2 audio.
@@ -48,6 +48,12 @@ also have dedicated mono-to-stereo variants. Controls take effect at host block 
 - Chorus / Flanger keeps a continuous modulation phase and uses an
   interpolated delay. In the mono-to-stereo version, the outputs use
   different modulation phases and delay offsets.
+- Phaser uses the original 24-stage allpass sweep for mono and stereo.
+  The mono-to-stereo variant uses Hilbert sidebands and exposes sweep period
+  and wet mix. Both algorithms update on a continuous eight-frame schedule.
+- Rotary Speaker uses the original Hilbert split and filtered crossfeed.
+  Its period follows the standalone control, with two rotations per
+  indicated period.
 
 ## Build and test
 

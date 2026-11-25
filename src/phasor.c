@@ -196,8 +196,6 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-#define PHASOR_UPDATE_INTERVAL 8
-#define PHASOR_SHAPE 0.7
  
 static void
 update_phasor_speed(GtkAdjustment *adj, struct phasor_params *params)
@@ -350,96 +348,35 @@ phasor_init(struct effect *p)
 }
 
 static void
-phasor_filter_mono(struct effect *p, data_block_t *db)
-{
-    struct phasor_params *params = p->params;
-    DSP_SAMPLE     *s, tmp;
-    int_fast16_t    count, curr_channel = 0, i;
-    float           delay, Dry, Wet, f;
-
-    count = db->len;
-    s = db->data;
-
-    Wet = params->drywet / 100.0f;
-    Dry = 1.f - Wet;
-    f = params->f;
-
-    while (count) {
-        if (curr_channel == 0 && count % PHASOR_UPDATE_INTERVAL == 0) { 
-            f += 1000.0f / params->sweep_time / sample_rate * PHASOR_UPDATE_INTERVAL;
-            if (f >= 1.0f)
-                f -= 1.0f;
-            delay = (sin_lookup(f) + 1.f) / 2.f;
-            delay *= params->depth / 100.0f;
-            delay = 1.0f - delay;
-            delay = ((exp(PHASOR_SHAPE * delay) - 1.f) / (exp(PHASOR_SHAPE) - 1.f));
-
-            for (i = 0; i < MAX_PHASOR_FILTERS; i += 1)
-                set_phaser_biquad(delay, &params->allpass[i]);
-        }
-        
-        tmp = *s;
-        for (i = 0; i < MAX_PHASOR_FILTERS; i += 1)
-            tmp = do_biquad(tmp, &params->allpass[i], curr_channel);
-        *s = *s * Dry + tmp * Wet;
-        
-        curr_channel = (curr_channel + 1) % db->channels;
-        s++;
-        count--;
-    }
-}
-
-static void
-phasor_filter_stereo(struct effect *p, data_block_t *db)
-{
-    struct phasor_params *params = p->params;
-    float f, Dry, Wet, sinval=0, cosval=0;
-    int_fast16_t i;
-    DSP_SAMPLE *tmp;
-    
-    db->channels = 2;
-    db->len *= 2;
-    f = params->f;
-    Wet = params->drywet / 100.0;
-    Dry = 1.f - Wet;
-    for (i = 0; i < db->len / 2; i += 1) {
-        DSP_SAMPLE x0, x1, y0, y1;
-        if (i % PHASOR_UPDATE_INTERVAL == 0) { 
-            f += 1000.0f / params->sweep_time / sample_rate * PHASOR_UPDATE_INTERVAL;
-            if (f >= 1.0f)
-                f -= 1.0f;
-            sinval = sin_lookup(f);
-            cosval = cos_lookup(f);
-        }
-
-        hilbert_transform(db->data[i], &x0, &x1, &params->hilb, 0);
-        y0 = cosval * x0 + sinval * x1;
-        y1 = cosval * x0 - sinval * x1;
-
-        db->data_swap[i*2+0] = Dry * db->data[i] + Wet * y0;
-        db->data_swap[i*2+1] = Dry * db->data[i] + Wet * y1;
-    }
-    /* swap to processed buffer for next effect */
-    tmp = db->data;
-    db->data = db->data_swap;
-    db->data_swap = tmp;
-}
-
-static void
 phasor_filter(struct effect *p, data_block_t *db)
 {
     struct phasor_params *params = p->params;
+    float wet = params->drywet / 100.0;
+    double depth = params->depth / 100.0;
+    double step;
+    int frame, channel;
 
+    if (!sample_rate || !(params->sweep_time > 0.0))
+        return;
+    step = 1000.0 / params->sweep_time / sample_rate;
     if (n_output_channels > 1 && db->channels == 1 && params->stereo) {
-        phasor_filter_stereo(p, db);
-        params->f += 1000.0 / params->sweep_time / sample_rate * (db->len / db->channels);
+        DSP_SAMPLE *input = db->data;
+        for (frame = 0; frame < db->len; ++frame)
+            gnuitar_phaser_spread(&params->dsp, input[frame], step, wet,
+                                   db->data_swap + 2 * frame);
+        db->data = db->data_swap;
+        db->data_swap = input;
+        db->channels = 2;
+        db->len *= 2;
     } else {
-        phasor_filter_mono(p, db);
-        params->f += 1000.0 / params->sweep_time / sample_rate * (db->len / db->channels);
+        for (frame = 0; frame < db->len / db->channels; ++frame) {
+            gnuitar_phaser_tick(&params->dsp, step, depth);
+            for (channel = 0; channel < db->channels; ++channel) {
+                DSP_SAMPLE *sample = &db->data[frame * db->channels + channel];
+                *sample = gnuitar_phaser_channel(&params->dsp, *sample, channel, wet);
+            }
+        }
     }
-    
-    if (params->f >= 1.0)
-        params->f -= 1.0;
 }
 
 static void
@@ -491,10 +428,9 @@ phasor_create()
     params->sweep_time = 200.0;
     params->depth = 100.0;
     params->drywet = 50.0;
-    params->f = 0;
     params->stereo = 0;
 
-    hilbert_init(&params->hilb);
+    gnuitar_phaser_reset(&params->dsp);
 
     return p;
 }
