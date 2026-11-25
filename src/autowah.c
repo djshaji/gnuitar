@@ -205,20 +205,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef _MSC_VER
-#define tanhf(x) tanh(x)
-#define expf(x) exp(x)
-#endif
-
-/* these thresholds are used to trigger the sweep. The system accumulates
- * time-weighted average of square difference between samples ("delta") and
- * the energy per sample ("power"). If either suddenly increases, the
- * sweep triggers. Data is collected AUTOWAH_HISTORY_LENGTH ms apart. */
-
-#define AUTOWAH_HISTORY_LENGTH  100  /* ms */
-#define AUTOWAH_DISCANT_TRIGGER 0.60 /* dB */
-#define AUTOWAH_BASS_TRIGGER    0.65 /* dB */
-
 static const char *methods[] = {
     "Lowpass",
     "Bandpass",
@@ -469,169 +455,34 @@ autowah_init(struct effect *p)
     gtk_widget_show_all(p->control);
 }
 
-static double
-power2db(double power)
-{
-    return log(power) / log(10) * 10;
-}
-
 static void
 autowah_filter(struct effect *p, data_block_t *db)
 {
-    struct autowah_params *ap;
-    int             i, curr_channel = 0, delay_time;
-    float           freq, g, g2;
+    struct autowah_params *params = p->params;
+    AutowahControls controls;
+    int frame, channel;
 
-    ap = (struct autowah_params *) p->params;
+    if (!sample_rate || !(params->sweep_time > 0.0f))
+        return;
+    controls.rate = sample_rate;
+    controls.sweep_step = 2000.0 / params->sweep_time / sample_rate;
+    controls.pedal = params->sync == WAH_PEDAL
+                   ? fmin(1.0, fmax(0.0, midi_get_continuous_control(-1))) : 0.0;
+    controls.low = fmin(5000.0, fmax(80.0, params->freq_low));
+    controls.high = fmin(5000.0, fmax(80.0, params->freq_high));
+    controls.resonance = fmin(1.0, fmax(0.30, params->res / 100.0));
+    controls.wet = fmin(1.0, fmax(0.0, params->drywet / 100.0));
+    controls.mode = params->sync;
+    controls.model = params->method;
 
-    memcpy(db->data_swap, db->data, db->len * sizeof(DSP_SAMPLE));
+    for (frame = 0; frame < db->len / db->channels; ++frame) {
+        DSP_SAMPLE *input = db->data + frame * db->channels;
 
-    if (ap->sync == 1) { /* continuous sweep */
-        /* recover from noncontinuous sweep */
-        if (ap->dir == 0)
-            ap->dir = 1.0;
-        
-        if (ap->f > 1.0f && ap->dir > 0)
-            ap->dir = -1;
-        if (ap->f < 0.0f && ap->dir < 0)
-            ap->dir = 1;
+        gnuitar_wah_measure(&params->dsp, params->history, input, db->channels, sample_rate);
+        gnuitar_wah_tick(&params->dsp, &controls);
+        for (channel = 0; channel < db->channels; ++channel)
+            input[channel] = gnuitar_wah_sample(&params->dsp, input[channel], channel, &controls);
     }
-    if (ap->sync == 0) { /* envelope detect */
-        /* Firstly, quiesce wah if we have reached the end of sweep */
-        if (ap->f < 0.0f) {
-            ap->f = 0.0;
-            ap->dir = 0;
-        }
-        delay_time = sample_rate * AUTOWAH_HISTORY_LENGTH / 1000;
-        
-        /* Estimate signal higher frequency content's power. When user picks
-         * the string strongly it's the high frequency content that increases
-         * most. */
-
-        /* XXX we should probably treat all channels separately.
-         * We just skip all channels but the first presently. */
-        for (i = 0; i < db->len; i++) { if (curr_channel == 0) {
-            ap->delayed_accum_power += pow(ap->history->get(ap->history, delay_time), 2);
-            ap->fresh_accum_power += pow(db->data[i], 2);
-            
-            ap->delayed_accum_delta +=
-                pow(ap->history->get(ap->history, delay_time) -
-                    ap->history->get(ap->history, delay_time - 1), 2);
-            
-            ap->fresh_accum_delta +=
-                    pow(db->data[i] - ap->history->get(ap->history, 0), 2);
-
-            ap->history->add(ap->history, db->data[i]);
-            
-            ap->accum_n += 1;
-            if (ap->accum_n > 8192) {
-                ap->fresh_accum_power   /= 2; 
-                ap->fresh_accum_delta   /= 2; 
-                ap->delayed_accum_power /= 2; 
-                ap->delayed_accum_delta /= 2;
-                ap->accum_n             /= 2;
-            }
-        } curr_channel = (curr_channel + 1) % db->channels; }
-
-        /* I skip some scale factors here that would cancel out */
-        if ((power2db(ap->fresh_accum_delta) > power2db(ap->delayed_accum_delta)
-                                              + AUTOWAH_DISCANT_TRIGGER) ||
-            (power2db(ap->fresh_accum_power) > power2db(ap->delayed_accum_power)
-                                              + AUTOWAH_BASS_TRIGGER)) {
-            ap->f = 1.0f;
-            ap->dir = -1.0;
-        }
-    }
-    if (ap->sync == 2) { /* midi control, from Roland FC-200 or somesuch */
-        ap->f = midi_get_continuous_control(-1);
-        ap->dir = 0;
-        ap->freq_vibrato = 0;
-    }
-
-    /* in order to have audibly linear sweep, we must map
-     * [0..1] -> [freq_low, freq_high] linearly in log2, which requires
-     * f(x) = a * 2 ^ (b * x)
-     *
-     * we know that f(0) = freq_low, and f(1) = freq_high. It follows that:
-     * a = freq_low, and b = log2(freq_high / freq_low)
-     */
-
-    ap->smoothed_f = (ap->f + ap->smoothed_f) / 2.f;
-    freq = ap->freq_low * pow(2, log(ap->freq_high / ap->freq_low)/log(2) * ap->smoothed_f + 0.2 * sin_lookup(ap->freq_vibrato));
-    ap->f += ap->dir * 1000.0f / ap->sweep_time * db->len / (sample_rate * db->channels) * 2;
-
-    ap->freq_vibrato += 1000.0f / ap->sweep_time * db->len / (sample_rate * db->channels) / 2.0f;
-    if (ap->freq_vibrato >= 1.0f)
-        ap->freq_vibrato -= 1.0f;
-    
-    switch (ap->method) {
-      case 0:
-        /* lowpass resonant filter -- we must avoid setting value 0 to
-         * resonance. We also drop level by 6 dB to leave some room for it. */
-        set_lpf_biquad(sample_rate, freq, 1.1 + -ap->res / 100.0, &ap->lpf);
-        for (i = 0; i < db->len; i += 1) {
-            db->data[i] = do_biquad(db->data[i], &ap->lpf, curr_channel) / 2;
-            curr_channel = (curr_channel + 1) % db->channels;
-        }
-        break;
-        
-      case 1: 
-        set_bpf_biquad(sample_rate, freq, 1.1 + -ap->res / 100.0, &ap->bpf);
-        for (i = 0; i < db->len; i += 1) {
-            db->data[i] = do_biquad(db->data[i], &ap->bpf, curr_channel);
-            curr_channel = (curr_channel + 1) % db->channels;
-        }
-        break;
-
-      case 2:
-      case 3:
-        /* Moog ladder filter according to Antti Huovilainen. */
-
-/* I, C, V = electrical parameters
- * f = center frequency
- * r = resonance amount 0 .. 1
- *
- * ya(n) = ya(n-1) + I / (C * f) * (tanh( (x(n) - 4 * r * yd(n-1)) / (2 * V) ) - Wa(n-1))
- * yb(n) = yb(n-1) + I / (C * f) * (Wa(n) - Wb(n-1))
- * yc(n) = yc(n-1) + I / (C * f) * (Wb(n) - Wc(n-1))
- * yd(n) = yd(n-1) + I / (C * f) * (Wc(n) - Wd(n-1))
- *
- * Wx = tanh(Yx(n) / (2 * Vt)) */
-
-        g = 1.f - expf((float) (-2.0 * M_PI) * freq / sample_rate);
-        g2 = g;
-        /* TB-303 style: the first phase is one octave higher than rest */
-        if (ap->method == 3)
-            g2 = 1.f - expf((float) (-2.0 * M_PI) * 2 * freq / sample_rate);
-        for (i = 0; i < db->len; i += 1) {
-#define PARAM_V (MAX_SAMPLE * 1.0) /* the sound gets dirtier if the factor gets small */
-            ap->ya[curr_channel] += (float) PARAM_V * g2 *
-                (tanhf( (db->data[i] - 4.f * ap->res/100.0f * ap->yd[curr_channel]) / (float) PARAM_V )
-                 - tanhf( ap->ya[curr_channel] / (float) PARAM_V));
-            ap->yb[curr_channel] += (float) PARAM_V * g *
-                (tanhf( ap->ya[curr_channel] / (float) PARAM_V )
-                 - tanhf( ap->yb[curr_channel] / (float) PARAM_V ));
-            ap->yc[curr_channel] += (float) PARAM_V * g *
-                (tanhf( ap->yb[curr_channel] / (float) PARAM_V )
-                 - tanhf( ap->yc[curr_channel] / (float) PARAM_V ));
-            ap->yd[curr_channel] += (float) PARAM_V * g *
-                (tanhf( ap->yc[curr_channel] / (float) PARAM_V )
-                 - tanhf( ap->yd[curr_channel] / (float) PARAM_V ));
-
-            /* the wah causes a gain loss of 12 dB which, but due to
-             * resonance we may clip; to compromise I'll adjust 6 dB back. */
-            db->data[i] = ap->yd[curr_channel] * 2.f;
-            curr_channel = (curr_channel + 1) % db->channels;
-        }
-        break;
-
-      default:
-        break;
-    }
-    
-    /* mix with dry sound */
-    for (i = 0; i < db->len; i++)
-        db->data[i] = (db->data[i]*ap->drywet + db->data_swap[i]*(100.f-ap->drywet))/100.0f;
 }
 
 static void
@@ -639,8 +490,11 @@ autowah_done(struct effect *p)
 {
     struct autowah_params *params = p->params;
 
-    del_Backbuf(params->history);
-    free(p->params);
+    int channel;
+
+    for (channel = 0; channel < MAX_CHANNELS; ++channel)
+        del_Backbuf(params->history[channel]);
+    gnuitar_free(p->params);
     gtk_widget_destroy(p->control);
     free(p);
 }
@@ -676,7 +530,7 @@ autowah_load(effect_t *p, LOAD_ARGS)
         fprintf(stderr, "autowah: invalid value for sync: %d\n", params->sync);
         params->sync = 0;
     }
-    if (params->method < 0 || params->method > 2) {
+    if (params->method < 0 || params->method > WAH_TB303) {
         params->method = 0;
         fprintf(stderr, "autowah: invalid value for method: %d\n", params->method);
     }
@@ -687,6 +541,8 @@ autowah_create()
 {
     effect_t *p;
     struct autowah_params *ap;
+    unsigned int rate = sample_rate > MAX_SAMPLE_RATE ? sample_rate : MAX_SAMPLE_RATE;
+    int channel;
 
     p = calloc(1, sizeof(effect_t));
     p->params = gnuitar_memalign(1, sizeof(struct autowah_params));
@@ -697,7 +553,8 @@ autowah_create()
     p->proc_done = autowah_done;
     p->proc_save = autowah_save;
     p->proc_load = autowah_load;
-    ap->history = new_Backbuf(MAX_SAMPLE_RATE * AUTOWAH_HISTORY_LENGTH / 1000);
+    for (channel = 0; channel < MAX_CHANNELS; ++channel)
+        ap->history[channel] = new_Backbuf(rate * GNUITAR_WAH_HISTORY_MS / 1000);
     
     ap->method = 0; /* low-pass resonant filter */
     ap->freq_low = 280;

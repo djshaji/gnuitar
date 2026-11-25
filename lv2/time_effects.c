@@ -8,20 +8,21 @@
 #include "dsp/delay_echo_dsp.h"
 #include "dsp/reverb_chorus_dsp.h"
 #include "dsp/spatial_dsp.h"
+#include "dsp/autowah_dsp.h"
 
 #define GNUITAR_URI "https://github.com/djshaji/gnuitar#"
 #define SINE_SIZE 65536
 #define LEGACY_FULL_SCALE 8388608.0f
 
-typedef enum { DELAY, ECHO, REVERB, CHORUS, PHASER, ROTARY } TimeEffectKind;
+typedef enum { DELAY, ECHO, REVERB, CHORUS, PHASER, ROTARY, AUTOWAH } TimeEffectKind;
 
 typedef struct {
     const float *inputs[2];
     float *outputs[2];
-    const float *controls[6];
+    const float *controls[8];
     Backbuf_t *history[2][GNUITAR_REVERB_LINES];
     float *sine;
-    void *spatial;
+    void *dsp;
     TimeEffectKind kind;
     double phase;
     double rate;
@@ -38,7 +39,7 @@ cleanup(LV2_Handle handle)
         for (line = 0; line < self->lines; ++line)
             del_Backbuf(self->history[channel][line]);
     }
-    free(self->spatial);
+    free(self->dsp);
     free(self->sine);
     free(self);
 }
@@ -66,7 +67,7 @@ create(double rate, unsigned int inputs, unsigned int outputs, TimeEffectKind ki
     if (kind == PHASER || kind == ROTARY) {
         size_t size = kind == PHASER ? sizeof(PhaserDSP) : sizeof(RotaryDSP);
 
-        if (posix_memalign(&self->spatial, 16, size)) {
+        if (posix_memalign(&self->dsp, 16, size)) {
             cleanup(self);
             return NULL;
         }
@@ -74,6 +75,13 @@ create(double rate, unsigned int inputs, unsigned int outputs, TimeEffectKind ki
             self->num_controls = 2;
         if (kind == ROTARY)
             self->num_controls = 1;
+    }
+    if (kind == AUTOWAH) {
+        self->num_controls = 8;
+        if (posix_memalign(&self->dsp, 16, sizeof(AutowahDSP))) {
+            cleanup(self);
+            return NULL;
+        }
     }
     if (kind == CHORUS) {
         self->sine = malloc((SINE_SIZE + 1) * sizeof(*self->sine));
@@ -95,6 +103,9 @@ create(double rate, unsigned int inputs, unsigned int outputs, TimeEffectKind ki
                 break;
             case REVERB:
                 capacity = gnuitar_reverb_capacity(line, rate);
+                break;
+            case AUTOWAH:
+                capacity = (unsigned int) ceil(rate * GNUITAR_WAH_HISTORY_MS / 1000.0) + 1;
                 break;
             case CHORUS:
                 capacity = (unsigned int) ceil(rate * (GNUITAR_CHORUS_MAX_BASE +
@@ -137,9 +148,11 @@ activate(LV2_Handle handle)
 
     self->phase = 0.0;
     if (self->kind == PHASER)
-        gnuitar_phaser_reset(self->spatial);
+        gnuitar_phaser_reset(self->dsp);
     if (self->kind == ROTARY)
-        gnuitar_rotary_reset(self->spatial, self->rate);
+        gnuitar_rotary_reset(self->dsp, self->rate);
+    if (self->kind == AUTOWAH)
+        memset(self->dsp, 0, sizeof(AutowahDSP));
     for (channel = 0; channel < self->inputs_count; ++channel) {
         for (line = 0; line < self->lines; ++line) {
             Backbuf_t *history = self->history[channel][line];
@@ -277,7 +290,7 @@ static void
 run_phaser(LV2_Handle handle, uint32_t frames)
 {
     TimeEffect *self = handle;
-    PhaserDSP *state = self->spatial;
+    PhaserDSP *state = self->dsp;
     bool spread = self->inputs_count != self->outputs_count;
     double step = 1000.0 / control(self->controls[0], 200, 150, 2000) / self->rate;
     float wet = control(self->controls[1], 50, 0, 100) / 100.0;
@@ -311,9 +324,42 @@ run_rotary(LV2_Handle handle, uint32_t frames)
 
     for (frame = 0; frame < frames; ++frame) {
         DSP_SAMPLE output[2];
-        gnuitar_rotary_spread(self->spatial, spatial_input(self->inputs[0][frame]), step, output);
+        gnuitar_rotary_spread(self->dsp, spatial_input(self->inputs[0][frame]), step, output);
         self->outputs[0][frame] = output[0] / LEGACY_FULL_SCALE;
         self->outputs[1][frame] = output[1] / LEGACY_FULL_SCALE;
+    }
+}
+
+static void
+run_autowah(LV2_Handle handle, uint32_t frames)
+{
+    TimeEffect *self = handle;
+    AutowahDSP *state = self->dsp;
+    Backbuf_t *history[] = {self->history[0][0], self->history[1][0]};
+    AutowahControls settings = {
+        .rate = self->rate,
+        .sweep_step = 2000.0 / control(self->controls[0], 500, 100, 10000) / self->rate,
+        .low = control(self->controls[1], 280, 80, 5000),
+        .high = control(self->controls[2], 900, 80, 5000),
+        .resonance = control(self->controls[3], 85, 30, 100) / 100.0,
+        .wet = control(self->controls[4], 100, 0, 100) / 100.0,
+        .mode = (int) lround(control(self->controls[5], WAH_ENVELOPE, WAH_ENVELOPE, WAH_PEDAL)),
+        .model = (int) lround(control(self->controls[6], WAH_LOWPASS, WAH_LOWPASS, WAH_TB303)),
+        .pedal = control(self->controls[7], 0, 0, 1),
+    };
+    uint32_t frame, channel;
+
+    for (frame = 0; frame < frames; ++frame) {
+        DSP_SAMPLE input[2];
+        for (channel = 0; channel < self->inputs_count; ++channel)
+            input[channel] = spatial_input(self->inputs[channel][frame]);
+
+        gnuitar_wah_measure(state, history, input, self->inputs_count, self->rate);
+        gnuitar_wah_tick(state, &settings);
+        for (channel = 0; channel < self->outputs_count; ++channel) {
+            self->outputs[channel][frame] =
+                gnuitar_wah_sample(state, input[channel], channel, &settings) / LEGACY_FULL_SCALE;
+        }
     }
 }
 
@@ -330,6 +376,8 @@ effect_kind(const LV2_Descriptor *descriptor)
         return PHASER;
     if (descriptor->run == run_rotary)
         return ROTARY;
+    if (descriptor->run == run_autowah)
+        return AUTOWAH;
     return DELAY;
 }
 
@@ -379,6 +427,8 @@ gnuitar_time_effect_descriptor(uint32_t index)
         {GNUITAR_URI "phaser-stereo", instantiate_stereo, connect_port, activate, run_phaser, NULL, cleanup, NULL},
         {GNUITAR_URI "phaser-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_phaser, NULL, cleanup, NULL},
         {GNUITAR_URI "rotary-speaker-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_rotary, NULL, cleanup, NULL},
+        {GNUITAR_URI "autowah-mono", instantiate_mono, connect_port, activate, run_autowah, NULL, cleanup, NULL},
+        {GNUITAR_URI "autowah-stereo", instantiate_stereo, connect_port, activate, run_autowah, NULL, cleanup, NULL},
     };
     return index < sizeof(descriptors) / sizeof(descriptors[0]) ? &descriptors[index] : NULL;
 }

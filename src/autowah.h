@@ -24,13 +24,13 @@
 #define _AUTOWAH_H_ 1
 
 #include "effect.h"
-#include "backbuf.h"
-#include "biquad.h"
+#include "dsp/autowah_dsp.h"
 
 effect_t *   autowah_create(void);
 
 struct autowah_params {
-    Backbuf_t       *history;
+    Backbuf_t       *history[MAX_CHANNELS];
+    AutowahDSP      dsp;
 
     /* keep some widgets so we can toggle their enabled state */
     GtkWidget       *w_control;
@@ -45,21 +45,6 @@ struct autowah_params {
     int             sync;
     int             method;
 
-    float           fresh_accum_delta;
-    float           fresh_accum_power;
-    float           delayed_accum_delta;
-    float           delayed_accum_power;
-    int             accum_n;
-    
-    float           f, smoothed_f, freq_vibrato;
-    int             dir;
-    float           ya[MAX_CHANNELS];
-    float           yb[MAX_CHANNELS];
-    float           yc[MAX_CHANNELS];
-    float           yd[MAX_CHANNELS];
-
-    Biquad_t        lpf;
-    Biquad_t        bpf;
 };
 
 #endif
