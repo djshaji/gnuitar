@@ -537,6 +537,60 @@ test_distort_low_rate(const LV2_Descriptor *descriptor, uint32_t channels,
     descriptor->cleanup(plugin.handle);
 }
 
+static void
+test_overdrive(Plugin plugin)
+{
+    enum { count = 128 };
+    float left[count] = {0}, right[count] = {0};
+    float out_l[count], out_r[count], silence_l[count], silence_r[count];
+    float settings[] = {75.0f, 68.0f, -2.0f};
+    float one_in = 0.5f, one_out = 42.0f, one_right = 0.0f;
+    const uint32_t sizes[] = {1, 2, 31, 32, 33, 29};
+    uint32_t i, offset = 0;
+    bool heard_transient = false;
+
+    for (i = 0; i < 3; ++i)
+        connect_control(plugin, i, &settings[i]);
+
+    plugin.descriptor->activate(plugin.handle);
+    connect_audio(plugin, &one_in, &one_right, &one_out, &one_right);
+    plugin.descriptor->run(plugin.handle, 0);
+    CHECK(one_out == 42.0f);
+    plugin.descriptor->run(plugin.handle, 1);
+    CHECK(isfinite(one_out));
+
+    plugin.descriptor->activate(plugin.handle);
+    connect_audio(plugin, left, right, silence_l, silence_r);
+    plugin.descriptor->run(plugin.handle, count);
+
+    /* Sample 4 is outside all legacy silence probes in either layout. */
+    left[4] = 0.9f;
+    plugin.descriptor->activate(plugin.handle);
+    connect_audio(plugin, left, right, out_l, out_r);
+    plugin.descriptor->run(plugin.handle, count);
+
+    for (i = 0; i < count; ++i) {
+        CHECK(isfinite(out_l[i]));
+        if (fabsf(out_l[i] - silence_l[i]) > 0.001f)
+            heard_transient = true;
+        if (plugin.channels == 2)
+            CHECK(out_r[i] == silence_r[i]);
+    }
+    CHECK(heard_transient);
+
+    plugin.descriptor->activate(plugin.handle);
+    for (i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
+        connect_audio(plugin, left + offset, right + offset,
+                      (plugin.channels == 2 ? right : left) + offset, left + offset);
+        plugin.descriptor->run(plugin.handle, sizes[i]);
+        offset += sizes[i];
+    }
+    CHECK(offset == count);
+    CHECK(memcmp(plugin.channels == 2 ? right : left, out_l, sizeof(left)) == 0);
+    if (plugin.channels == 2)
+        CHECK(memcmp(left, out_r, sizeof(right)) == 0);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -547,6 +601,7 @@ main(int argc, char **argv)
         URI_PREFIX "noise-gate-mono", URI_PREFIX "noise-gate-stereo",
         URI_PREFIX "sustain-mono", URI_PREFIX "sustain-stereo",
         URI_PREFIX "distort-mono", URI_PREFIX "distort-stereo",
+        URI_PREFIX "overdrive-mono", URI_PREFIX "overdrive-stereo",
     };
     const LV2_Descriptor *(*get_descriptor)(uint32_t);
     void *library;
@@ -592,13 +647,15 @@ main(int argc, char **argv)
                     test_noise_gate(plugin, rates[r]);
                 else if (i < 10)
                     test_sustain(plugin);
-                else
+                else if (i < 12)
                     test_distort(plugin, rates[r]);
+                else
+                    test_overdrive(plugin);
                 descriptor->cleanup(plugin.handle);
             }
             if (i < 6)
                 test_vibrato_multiple_wraps(descriptor, channels, bundle_path);
-            if (i >= 10)
+            if (i == 10 || i == 11)
                 test_distort_low_rate(descriptor, channels, bundle_path);
         }
     }

@@ -1,7 +1,7 @@
 # GNUitar LV2 plugins
 
 The Linux bundle provides Digital Amp, Tremolo, Tremolo Bar, Noise Gate,
-Sustain, and Distort.
+Sustain, Distort, and Overdrive.
 Each effect has mono and stereo variants, and controls take effect at host
 block boundaries.
 
@@ -23,6 +23,11 @@ block boundaries.
   original drive, saturation, and level calculations. It supports sample
   rates of 8 kHz and up. On low-rate hosts, its low-pass setting is limited
   to one-sixth of the sample rate to keep the LC integrator stable.
+- Overdrive keeps the original four-times oversampling, diode solver, and
+  output filters. Controls expose drive, output level, and the legacy
+  treble scale. The solver and filters keep separate histories per channel.
+  Silent input continues to advance those histories so tails can decay
+  across block boundaries.
 
 ## Build and test
 

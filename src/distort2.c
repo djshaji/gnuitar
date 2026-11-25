@@ -350,27 +350,6 @@
 #include "gui.h"
 #include <math.h>
 
-#define RC_FEEDBACK_R          4.7e3
-#define RC_FEEDBACK_C          47e-9
-#define RC_DRIVE_C             51e-12   /* farads */
-#define DRIVE_STATIC           50e3     /* ohms */
-#define DRIVE_LOG              500e3    /* ohms */
- 
-#define MAX_NEWTON_ITERATIONS   20      /* limits the time looking for convergence */
-#define UPSAMPLING_RATE         4       /* you can't change this, see upsample[] */
- 
-/* the effect is defined in -1.0 .. 1.0 range */
-#define DIST2_DOWNSCALE		(1.0 / MAX_SAMPLE)
-#define DIST2_UPSCALE		(MAX_SAMPLE / 1.0)
-/* when we have converged within one 16-bit sample, accept value */
-#define EFFECT_PRECISION	(1.0 / 32768)
-
-/* Check if the compiler is Visual C or GCC */
-#if defined(_MSC_VER)
-#   pragma intrinsic (exp)
-#   define expf(x) exp(x)
-#endif
-
 static void
 update_distort2_drive(GtkAdjustment *adj, struct distort2_params *params)
 {
@@ -505,110 +484,25 @@ static void
 distort2_filter(struct effect *p, data_block_t *db)
 {
 
-    int_fast32_t        i,count,bailout;
-    int_fast8_t	        curr_channel = 0;
-    DSP_SAMPLE 	       *s;
-    struct distort2_params *dp = p->params;
-    float x,y,x1,x2,f,df,dx,e1,e2;
-    DSP_SAMPLE upsample[UPSAMPLING_RATE];
-    float DRIVE = (float) DRIVE_STATIC + dp->drive / 100.0f * (float) DRIVE_LOG;
-    float mUt = (20.0f + 100.f - 70.f) * 1e-3f;
-    /* correct Is with mUt to approximately keep drive the
-     * same. Original parameters said Is is 10e-12 and mUt 30e-3.
-     * If mUt grows, Is must shrink. 0.39 is experimental */
-    float Is = 10e-12f * expf(0.39f/30e-3f - 0.39f/mUt);
-    count = db->len;
-    s = db->data;
+    struct distort2_params *params = p->params;
+    float resistance = gnuitar_overdrive_resistance(params->drive);
+    float diode_current = gnuitar_overdrive_diode_current();
+    float level = params->clip / 100.0f;
+    int_fast32_t frame;
+    int channel;
 
-    /* no input, no output :-) to avoid extra calc. Optimized for noise gate,
-     * when all input is zero.
-     * This is the heuristics - since there is no the standard function
-     * in the ANSI C library that reliably compares the memory region
-     * with the given byte, we compare just a few excerpts from an array.
-     * If everything is zero, we have a large chances that all array is zero. */
-    if(s[0]==0 && s[1]==0 && s[16]==0 && s[17]==0 &&
-          s[24]==0 && s[25]==0 && s[32]==0 && s[33]==0 &&
-	  s[buffer_size-1]==0) {
-        for (i = 0; i < MAX_CHANNELS; i += 1) {
-            dp->last[i] = 0;
-        }
-        return;
+    if (params->rate != sample_rate) {
+        params->rate = sample_rate;
+        gnuitar_overdrive_reset(&params->dsp, params->rate);
     }
 
-    set_rc_lowpass_biquad(sample_rate * UPSAMPLING_RATE, 720, &dp->rolloff);
-    /*
-     * process signal; x - input, in the range -1, 1
-     */
-    while (count) {
-        /* "properly" interpolate previous input at positions 0 and 2 */
-        fir_interpolate_2x(dp->interpolate_firmem[curr_channel],
-                           *s, &upsample[2], &upsample[0]);
-        /* estimate the rest, this should be good enough for our purposes. */
-        upsample[1] = (upsample[0] + upsample[2]) / (DSP_SAMPLE) 2;
-        /* looking into firmem is a gross violation of interface. This will
-         * go away once I design fir_interpolate_4x. */
-        upsample[3] = ((DSP_SAMPLE) 3 * upsample[2] + dp->interpolate_firmem[curr_channel][2]) / (DSP_SAMPLE) 4;
-
-	/* Now the actual upsampled processing */
-	for (i = 0; i < UPSAMPLING_RATE; i++)
-	{
-            /* scale down to -1 .. 1 range */
-            x = upsample[i] * (float) DIST2_DOWNSCALE;
-            
-	    /* first compute the linear rc filter current output */
-	    x2 = do_biquad(x, &dp->feedback_minus_loop, curr_channel);
-            
-            x1 = (x - x2) / (float) RC_FEEDBACK_R;
-            
-	    /* start searching from time previous point , improves speed */
-	    y = dp->last[curr_channel];
-            /* limit iterations if the algorithm fails to converge */
-            bailout = MAX_NEWTON_ITERATIONS;
-	    do {
-		/* f(y) = 0 , y= ? */
-                /* e^3 ~ 20 */
-                e1 = expf((x - y) / mUt);
-                e2 = 1.0f / e1;
-		/* f=x1+(x-y)/DRIVE+Is*(exp((x-y)/mUt)-exp((y-x)/mUt));  optimized makes : */
-		f = x1 + (x - y) / DRIVE + Is * (e1 - e2);
-	
-		/* df/dy */
-		/*df=-1.0/DRIVE-Is/mUt*(exp((x-y)/mUt)+exp((y-x)/mUt)); optimized makes : */
-		df = -1.0f / DRIVE - Is / mUt * (e1 + e2);
-	
-		/* This is the newton's algo, it searches a root of a function,
-		 * f here, which must equal 0, using it's derivate. */
-		dx = f/df;
-		y -= dx;
-	    }
-	    while (fabs(dx) > (float) EFFECT_PRECISION && --bailout);
-	    /* when dx gets very small, we found a solution. */
-	    
-            /* Ensure that the value gets reset if something goes wrong */
-            if (isnan(y) || ! (y >= -2.0f && y <= 2.0f))
-                y = 0.f;
-            
-	    dp->last[curr_channel] = y;
-            /* static lowpass filtering -- this doubles as our decimation filter
-             * the rolloff is at 720 Hz, but is only 6 dB/oct. */
-            y = do_biquad(y, &dp->rolloff, curr_channel);
-	}
-        /* treble control + other final output filtering */
-        y += (y - do_biquad(y, &dp->treble_highpass, curr_channel)) * dp->treble / 3.0f;
-        y = do_biquad(y, &dp->output_bass_cut, curr_channel);
-	
-        /* scale up from -1..1 range */
-	*s = y * (float) DIST2_UPSCALE * (dp->clip / 100.0f);
-
-	/*if(*s > MAX_SAMPLE)
-	    *s=MAX_SAMPLE;
-	else if(*s < -MAX_SAMPLE)
-	    *s=-MAX_SAMPLE;*/
-
-	s++;
-	count--;
-
-        curr_channel = (curr_channel + 1) % db->channels;
+    for (frame = 0; frame < db->len / db->channels; ++frame) {
+        for (channel = 0; channel < db->channels; ++channel) {
+            DSP_SAMPLE *sample = &db->data[frame * db->channels + channel];
+            *sample = gnuitar_overdrive_sample(&params->dsp, *sample, channel,
+                                               resistance, diode_current, level,
+                                               params->treble);
+        }
     }
 }
 
@@ -663,12 +557,8 @@ distort2_create()
     ap->clip = 100.0;
     ap->treble = 6.0;
 
-    /* static shapers */
-    set_rc_lowpass_biquad(sample_rate, 3200, &ap->treble_highpass);
-    set_rc_lowpass_biquad(sample_rate * UPSAMPLING_RATE, 
-            1 / (2 * M_PI * RC_FEEDBACK_R * RC_FEEDBACK_C),
-            &ap->feedback_minus_loop);
-    set_rc_highpass_biquad(sample_rate, 160, &ap->output_bass_cut);
-    
+    ap->rate = sample_rate;
+    gnuitar_overdrive_reset(&ap->dsp, ap->rate);
+
     return p;
 }

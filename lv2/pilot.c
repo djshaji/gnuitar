@@ -13,6 +13,7 @@
 #include "dsp/noise_gate_dsp.h"
 #include "dsp/sustain_dsp.h"
 #include "dsp/distort_dsp.h"
+#include "dsp/overdrive_dsp.h"
 
 #define GNUITAR_URI "https://github.com/djshaji/gnuitar#"
 #define SINE_TABLE_SIZE 65536
@@ -31,6 +32,7 @@ typedef struct {
     NoiseGateDSP gate;
     double sustain_envelope[2];
     DistortDSP *distort;
+    OverdriveDSP *overdrive;
     uint32_t channels;
     uint32_t num_controls;
 } Plugin;
@@ -102,6 +104,8 @@ activate(LV2_Handle instance)
     memset(self->sustain_envelope, 0, sizeof(self->sustain_envelope));
     if (self->distort)
         gnuitar_distort_reset(self->distort, self->sample_rate);
+    if (self->overdrive)
+        gnuitar_overdrive_reset(self->overdrive, self->sample_rate);
     if (self->vibrato) {
         memset(self->vibrato, 0, sizeof(*self->vibrato));
         hilbert_init(&self->vibrato->hilbert);
@@ -324,6 +328,48 @@ create_distort(double rate, uint32_t channels)
     return self;
 }
 
+static void
+run_overdrive(LV2_Handle instance, uint32_t frames)
+{
+    Plugin *self = instance;
+    float drive = control_value(self->controls[0], 0.0f, 0.0f, 100.0f);
+    float level = control_value(self->controls[1], 100.0f, 0.0f, 100.0f) / 100.0f;
+    float treble = control_value(self->controls[2], 6.0f, -6.0f, 6.0f);
+    float resistance = gnuitar_overdrive_resistance(drive);
+    float diode_current = gnuitar_overdrive_diode_current();
+    uint32_t frame, channel;
+
+    for (frame = 0; frame < frames; ++frame) {
+        float input[2];
+
+        read_frame(self, frame, input);
+        for (channel = 0; channel < self->channels; ++channel) {
+            float sample = input[channel] * LEGACY_FULL_SCALE;
+            if (!isfinite(sample))
+                sample = 0.0f;
+            self->outputs[channel][frame] = gnuitar_overdrive_sample(
+                self->overdrive, sample, channel, resistance, diode_current,
+                level, treble) / LEGACY_FULL_SCALE;
+        }
+    }
+}
+
+static Plugin *
+create_overdrive(double rate, uint32_t channels)
+{
+    Plugin *self = create_instance(rate, channels, 3, false, false);
+    void *memory;
+
+    if (!self)
+        return NULL;
+    if (posix_memalign(&memory, 16, sizeof(*self->overdrive))) {
+        free(self);
+        return NULL;
+    }
+    self->overdrive = memory;
+    return self;
+}
+
 static Plugin *
 create_for_descriptor(const LV2_Descriptor *descriptor, double rate, uint32_t channels)
 {
@@ -337,6 +383,8 @@ create_for_descriptor(const LV2_Descriptor *descriptor, double rate, uint32_t ch
         return create_instance(rate, channels, 3, false, false);
     if (descriptor->run == run_distort)
         return create_distort(rate, channels);
+    if (descriptor->run == run_overdrive)
+        return create_overdrive(rate, channels);
     return create_instance(rate, channels, 1, false, false);
 }
 
@@ -344,6 +392,7 @@ static void
 cleanup(LV2_Handle instance)
 {
     Plugin *self = instance;
+    free(self->overdrive);
     free(self->distort);
     free(self->vibrato);
     free(self->sine_table);
@@ -381,6 +430,8 @@ static const LV2_Descriptor descriptors[] = {
     {GNUITAR_URI "sustain-stereo", instantiate_stereo, connect_port, activate, run_sustain, NULL, cleanup, NULL},
     {GNUITAR_URI "distort-mono", instantiate_mono, connect_port, activate, run_distort, NULL, cleanup, NULL},
     {GNUITAR_URI "distort-stereo", instantiate_stereo, connect_port, activate, run_distort, NULL, cleanup, NULL},
+    {GNUITAR_URI "overdrive-mono", instantiate_mono, connect_port, activate, run_overdrive, NULL, cleanup, NULL},
+    {GNUITAR_URI "overdrive-stereo", instantiate_stereo, connect_port, activate, run_overdrive, NULL, cleanup, NULL},
 };
 
 LV2_SYMBOL_EXPORT
