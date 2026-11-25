@@ -27,3 +27,15 @@ jobs:
              -DHAVE_GTK2 -DHAVE_OSS -DFLOAT_DSP '-DVERSION="0.3.2"' '-DG_LOG_DOMAIN="gnuitar"' \
              $(pkg-config --cflags gtk+-2.0 gthread-2.0) $sources \
              $(pkg-config --libs gtk+-2.0 gthread-2.0) -lm -o build-lv2/gnuitar-standalone
+      - name: Compare Tube Amplifier with the original 44.1 kHz mono DSP
+        run: |
+          reference=45f828f08215ac710316056decf64889c11b2afc
+          git fetch --depth=1 origin "$reference"
+          mkdir -p build-lv2/legacy
+          git show "$reference:src/tubeamp.c" > build-lv2/legacy/tubeamp.c
+          git show "$reference:src/tubeamp.h" > build-lv2/legacy/tubeamp.h
+          cc -std=gnu99 -O2 -D_GNU_SOURCE -DHAVE_GTK2 -DFLOAT_DSP -Wno-deprecated-declarations \
+             -Ibuild-lv2/legacy -Isrc $(pkg-config --cflags gtk+-2.0 gthread-2.0) \
+             lv2/tests/tubeamp_legacy_compare.c build-lv2/legacy/tubeamp.c src/biquad.c \
+             $(pkg-config --libs gtk+-2.0 gthread-2.0) -lm -ldl -o build-lv2/tubeamp-legacy-compare
+          build-lv2/tubeamp-legacy-compare "$PWD/build-lv2/bundles/gnuitar.lv2/gnuitar.so"
