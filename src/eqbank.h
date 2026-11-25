@@ -57,18 +57,22 @@
 #define _EQBANK_H_ 1
 
 #include "effect.h"
-#include "biquad.h"
+#include "dsp/eqbank_dsp.h"
 
 effect_t *   eqbank_create(void);
 
-struct eqbank_params {
-    double          *boosts;
-    double           volume;
-    Biquad_t        *filters;
-    DSP_SAMPLE      history_in[MAX_CHANNELS][8];
-    DSP_SAMPLE      history_out[MAX_CHANNELS][8];
+struct eqbank_params;
+
+struct eqbank_slider {
+    struct eqbank_params *params;
+    int band;
 };
 
-
+struct eqbank_params {
+    EqBankDSP dsp;
+    double boosts[GNUITAR_EQ_BANDS];
+    double volume;
+    struct eqbank_slider sliders[GNUITAR_EQ_BANDS];
+};
 
 #endif

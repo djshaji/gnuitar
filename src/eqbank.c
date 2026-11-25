@@ -139,23 +139,6 @@
  * Change to get diferently configured banks
  */
 
-/* Number of filters in bank */
-#define FB_NB 14
-/* Minimal value in Decibels ( for UI purpose only) */
-#define FB_MIN -9.9
-/* Maximal Value in Decibels */
-#define FB_MAX 9.9
-
-/* Array with the center frequencies of the filters in Hertz
- * Beware, to large values for the ends, may result in instability
- */
-
-static const int fb_cf[FB_NB] =
-    {40,100,200,320,640,1000,1600,2200,3000,4000,6000,8000,12000,16000};
-/* Array with the bandwidths of each filter in Hertz */
-static const int fb_bw[FB_NB] =
-    {30,120,160,320,640,800,1200,1200,1400,1800,2600,4000,6000,8000};
-
 #include <stdio.h>
 #include <stdlib.h>
 #ifndef _WIN32
@@ -169,17 +152,10 @@ static const int fb_bw[FB_NB] =
 #include "eqbank.h"
 #include "gui.h"
 
-static struct slider_wrapper {
-    struct eqbank_params *par;
-    int             slider_id;
-} sl_wrappers[FB_NB];
-
 static void
-update_eqbank_eq(GtkAdjustment * adj, struct slider_wrapper *p)
+update_eqbank_eq(GtkAdjustment *adj, struct eqbank_slider *slider)
 {
-    p->par->boosts[p->slider_id] = adj->value;
-    set_peq_biquad(sample_rate, fb_cf[p->slider_id], fb_bw[p->slider_id],
-		   adj->value, &p->par->filters[p->slider_id]);
+    slider->params->boosts[slider->band] = adj->value;
 }
 
 static void
@@ -193,11 +169,11 @@ eqbank_init(struct effect *p)
 {
     struct eqbank_params *peq;
 
-    GtkWidget      *boost[FB_NB],
+    GtkWidget      *boost[GNUITAR_EQ_BANDS],
                    *output;
-    GtkObject      *adj_boost[FB_NB],
+    GtkObject      *adj_boost[GNUITAR_EQ_BANDS],
                    *adj_output;
-    GtkWidget      *boost_label[FB_NB];
+    GtkWidget      *boost_label[GNUITAR_EQ_BANDS];
     GtkWidget      *Hzlabel,
                    *Dblabel,
                    *Olabel;
@@ -213,29 +189,29 @@ eqbank_init(struct effect *p)
     gtk_signal_connect(GTK_OBJECT(p->control), "delete_event",
 		       GTK_SIGNAL_FUNC(delete_event), p);
 
-    parmTable = gtk_table_new(3, FB_NB + 2, FALSE);
+    parmTable = gtk_table_new(3, GNUITAR_EQ_BANDS + 2, FALSE);
 
     Hzlabel = gtk_label_new("Frequency (Hz)");
     Dblabel = gtk_label_new("Boost (dB)");
 
-    gtk_table_attach(GTK_TABLE(parmTable), Hzlabel, 1, FB_NB, 2, 3,
+    gtk_table_attach(GTK_TABLE(parmTable), Hzlabel, 1, GNUITAR_EQ_BANDS, 2, 3,
 		     __GTKATTACHOPTIONS(GTK_FILL | GTK_SHRINK),
 		     __GTKATTACHOPTIONS(GTK_FILL | GTK_SHRINK), 0, 0);
     gtk_table_attach(GTK_TABLE(parmTable), Dblabel, 0, 1, 0, 2,
 		     __GTKATTACHOPTIONS(GTK_FILL | GTK_SHRINK),
 		     __GTKATTACHOPTIONS(GTK_FILL | GTK_SHRINK), 0, 0);
-    for (i = 0; i < FB_NB; i++) {
+    for (i = 0; i < GNUITAR_EQ_BANDS; i++) {
 	adj_boost[i] = gtk_adjustment_new(peq->boosts[i],
-					  FB_MIN, FB_MAX, 1.0, 5.0, 0.0);
+					  -GNUITAR_EQ_GAIN_MAX, GNUITAR_EQ_GAIN_MAX, 1.0, 5.0, 0.0);
 	boost[i] = gtk_vscale_new(GTK_ADJUSTMENT(adj_boost[i]));
 	gtk_widget_set_size_request(GTK_WIDGET(boost[i]),32,100);
 	gtk_range_set_inverted(GTK_RANGE(boost[i]), TRUE);
 
-	sl_wrappers[i].par = peq;
-	sl_wrappers[i].slider_id = i;
+	peq->sliders[i].params = peq;
+	peq->sliders[i].band = i;
 	gtk_signal_connect(GTK_OBJECT(adj_boost[i]), "value_changed",
 			   GTK_SIGNAL_FUNC(update_eqbank_eq),
-			   (void *) &sl_wrappers[i]);
+			   &peq->sliders[i]);
 	gtk_table_attach(GTK_TABLE(parmTable), boost[i], i + 1, i + 2, 0,
 			 1,
 			 __GTKATTACHOPTIONS(GTK_FILL | GTK_EXPAND |
@@ -243,12 +219,12 @@ eqbank_init(struct effect *p)
 			 __GTKATTACHOPTIONS(GTK_FILL | GTK_EXPAND |
 					    GTK_SHRINK), 3, 3);
         
-        if (fb_cf[i] < 1000) {
-            sprintf(s, "%i", fb_cf[i]);
-        } else if (fb_cf[i] % 1000 == 0) {
-            sprintf(s, "%ik", fb_cf[i] / 1000);
+        if (gnuitar_eq_centers[i] < 1000) {
+            sprintf(s, "%i", gnuitar_eq_centers[i]);
+        } else if (gnuitar_eq_centers[i] % 1000 == 0) {
+            sprintf(s, "%ik", gnuitar_eq_centers[i] / 1000);
         } else {
-            sprintf(s, "%.1fk", fb_cf[i] / 1000.0);
+            sprintf(s, "%.1fk", gnuitar_eq_centers[i] / 1000.0);
         }
 	
 	boost_label[i] = gtk_label_new(s);
@@ -259,17 +235,17 @@ eqbank_init(struct effect *p)
 
     }
     Olabel = gtk_label_new("Master");
-    gtk_table_attach(GTK_TABLE(parmTable), Olabel, FB_NB + 1, FB_NB + 2, 1, 2,
+    gtk_table_attach(GTK_TABLE(parmTable), Olabel, GNUITAR_EQ_BANDS + 1, GNUITAR_EQ_BANDS + 2, 1, 2,
 		     __GTKATTACHOPTIONS(GTK_FILL | GTK_SHRINK),
 		     __GTKATTACHOPTIONS(GTK_FILL | GTK_SHRINK), 3, 3);
-    adj_output = gtk_adjustment_new(peq->volume, FB_MIN, FB_MAX, 1.0, 5.0, 0.0);
+    adj_output = gtk_adjustment_new(peq->volume, -GNUITAR_EQ_GAIN_MAX, GNUITAR_EQ_GAIN_MAX, 1.0, 5.0, 0.0);
     output = gtk_vscale_new(GTK_ADJUSTMENT(adj_output));
     gtk_widget_set_size_request(output,55,100);
     gtk_range_set_inverted(GTK_RANGE(output), TRUE);
     gtk_signal_connect(GTK_OBJECT(adj_output), "value_changed",
 		       GTK_SIGNAL_FUNC(update_eqbank_volume),
 		       (void *) peq);
-    gtk_table_attach(GTK_TABLE(parmTable), output, FB_NB + 1, FB_NB + 2, 0, 1,
+    gtk_table_attach(GTK_TABLE(parmTable), output, GNUITAR_EQ_BANDS + 1, GNUITAR_EQ_BANDS + 2, 0, 1,
 		     __GTKATTACHOPTIONS(GTK_FILL | GTK_EXPAND |
 					GTK_SHRINK),
 		     __GTKATTACHOPTIONS(GTK_FILL | GTK_EXPAND |
@@ -298,44 +274,28 @@ eqbank_init(struct effect *p)
 static void
 eqbank_filter(struct effect *p, data_block_t *db)
 {
-    int                 count;
-    DSP_SAMPLE         *s;
     struct eqbank_params *params = p->params;
-    float		  ocoeff;
-    int			  cchannel=0;
-	
-    count = db->len;
-    s = db->data;
+    float gain = (float) pow(10.0, params->volume / 20.0);
+    int band, frame, channel;
 
-    ocoeff = pow(10, params->volume / 20.0);
-    while (count) {
-        int i;
-        DSP_SAMPLE out1, out2;
-        /* using 2x upsampling */
-        fir_interpolate_2x(params->history_in[cchannel], *s, &out1, &out2);
-	for (i = 0; i < FB_NB; i++) {
-            /* out1 is the sample before out2 */
-	    out1 = do_biquad(out1, &params->filters[i], cchannel);
-            out2 = do_biquad(out2, &params->filters[i], cchannel);
+    if (params->dsp.rate != sample_rate)
+        gnuitar_eqbank_reset(&params->dsp, sample_rate);
+    for (band = 0; band < GNUITAR_EQ_BANDS; ++band)
+        gnuitar_eqbank_set_band(&params->dsp, band, params->boosts[band]);
+
+    for (frame = 0; frame < db->len / db->channels; ++frame) {
+        for (channel = 0; channel < db->channels; ++channel) {
+            DSP_SAMPLE *sample = &db->data[frame * db->channels + channel];
+            *sample = gnuitar_eqbank_sample(&params->dsp, *sample, channel, gain);
         }
-        /* downsample back to 1x -- observe reversed ordering */
-        *s = fir_decimate_2x(params->history_out[cchannel], out1, out2) * ocoeff;
-
-	cchannel = (cchannel + 1) % db->channels;
-	s++;
-	count--;
     }
 }
 
 static void
 eqbank_done(struct effect *p)
 {
-    struct eqbank_params *params = p->params;
-	
-    gnuitar_free(params->filters);
-    free(params->boosts);
-    free(p->params);
     gtk_widget_destroy(p->control);
+    gnuitar_free(p->params);
     free(p);
 }
 
@@ -346,7 +306,7 @@ eqbank_save(struct effect *p, SAVE_ARGS)
     gchar *label;
     int i;
 
-    for (i = 0; i < FB_NB; i += 1) {
+    for (i = 0; i < GNUITAR_EQ_BANDS; i += 1) {
 	label = g_strdup_printf("boost%d", i);
 	SAVE_DOUBLE(label, params->boosts[i]);
 	free(label);
@@ -361,16 +321,12 @@ eqbank_load(struct effect *p, LOAD_ARGS)
     gchar *label;
     int i;
 
-    for (i = 0; i < FB_NB; i += 1) {
+    for (i = 0; i < GNUITAR_EQ_BANDS; i += 1) {
 	label = g_strdup_printf("boost%d", i);
 	LOAD_DOUBLE(label, params->boosts[i]);
 	free(label);
     }
     LOAD_DOUBLE("volume", params->volume);
-
-    for (i = 0; i < FB_NB; i++) {
-	set_peq_biquad(sample_rate * 2, fb_cf[i], fb_bw[i], params->boosts[i], &params->filters[i]);
-    }
 }
 
 effect_t *
@@ -378,10 +334,9 @@ eqbank_create()
 {
     effect_t       *p;
     struct eqbank_params *params;
-    int             i;
 
     p = calloc(1, sizeof(effect_t));
-    p->params = calloc(1, sizeof(struct eqbank_params));
+    p->params = gnuitar_memalign(1, sizeof(struct eqbank_params));
     p->proc_init = eqbank_init;
     p->proc_filter = eqbank_filter;
     p->proc_save = eqbank_save;
@@ -390,11 +345,7 @@ eqbank_create()
     p->proc_done = eqbank_done;
 
     params = p->params;
-    params->filters = gnuitar_memalign(FB_NB, sizeof(params->filters[0]));
-    params->boosts  = calloc(FB_NB, sizeof(params->boosts[0]));
-    for (i = 0; i < FB_NB; i++)
-	set_peq_biquad(sample_rate * 2, fb_cf[i], fb_bw[i], params->boosts[i], &params->filters[i]);
-    params->volume = 0;
+    gnuitar_eqbank_reset(&params->dsp, sample_rate);
 
     return p;
 }

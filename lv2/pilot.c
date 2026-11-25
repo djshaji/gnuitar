@@ -14,6 +14,7 @@
 #include "dsp/sustain_dsp.h"
 #include "dsp/distort_dsp.h"
 #include "dsp/overdrive_dsp.h"
+#include "dsp/eqbank_dsp.h"
 
 #define GNUITAR_URI "https://github.com/djshaji/gnuitar#"
 #define SINE_TABLE_SIZE 65536
@@ -24,7 +25,7 @@
 typedef struct {
     const float *inputs[2];
     float *outputs[2];
-    const float *controls[5];
+    const float *controls[GNUITAR_EQ_BANDS + 1];
     double sample_rate;
     float phase;
     float *sine_table;
@@ -33,6 +34,7 @@ typedef struct {
     double sustain_envelope[2];
     DistortDSP *distort;
     OverdriveDSP *overdrive;
+    EqBankDSP *eqbank;
     uint32_t channels;
     uint32_t num_controls;
 } Plugin;
@@ -106,6 +108,8 @@ activate(LV2_Handle instance)
         gnuitar_distort_reset(self->distort, self->sample_rate);
     if (self->overdrive)
         gnuitar_overdrive_reset(self->overdrive, self->sample_rate);
+    if (self->eqbank)
+        gnuitar_eqbank_reset(self->eqbank, self->sample_rate);
     if (self->vibrato) {
         memset(self->vibrato, 0, sizeof(*self->vibrato));
         hilbert_init(&self->vibrato->hilbert);
@@ -370,6 +374,52 @@ create_overdrive(double rate, uint32_t channels)
     return self;
 }
 
+static void
+run_eqbank(LV2_Handle instance, uint32_t frames)
+{
+    Plugin *self = instance;
+    float gain_db = control_value(self->controls[GNUITAR_EQ_BANDS], 0.0f,
+                                  -GNUITAR_EQ_GAIN_MAX, GNUITAR_EQ_GAIN_MAX);
+    float gain = gnuitar_amp_gain(gain_db);
+    int band;
+    uint32_t frame, channel;
+
+    for (band = 0; band < self->eqbank->active_bands; ++band) {
+        float db = control_value(self->controls[band], 0.0f,
+                                 -GNUITAR_EQ_GAIN_MAX, GNUITAR_EQ_GAIN_MAX);
+        gnuitar_eqbank_set_band(self->eqbank, band, db);
+    }
+
+    for (frame = 0; frame < frames; ++frame) {
+        float input[2];
+
+        read_frame(self, frame, input);
+        for (channel = 0; channel < self->channels; ++channel) {
+            float sample = input[channel] * LEGACY_FULL_SCALE;
+            if (!isfinite(sample))
+                sample = 0.0f;
+            self->outputs[channel][frame] = gnuitar_eqbank_sample(
+                self->eqbank, sample, channel, gain) / LEGACY_FULL_SCALE;
+        }
+    }
+}
+
+static Plugin *
+create_eqbank(double rate, uint32_t channels)
+{
+    Plugin *self = create_instance(rate, channels, GNUITAR_EQ_BANDS + 1, false, false);
+    void *memory;
+
+    if (!self)
+        return NULL;
+    if (posix_memalign(&memory, 16, sizeof(*self->eqbank))) {
+        free(self);
+        return NULL;
+    }
+    self->eqbank = memory;
+    return self;
+}
+
 static Plugin *
 create_for_descriptor(const LV2_Descriptor *descriptor, double rate, uint32_t channels)
 {
@@ -385,6 +435,8 @@ create_for_descriptor(const LV2_Descriptor *descriptor, double rate, uint32_t ch
         return create_distort(rate, channels);
     if (descriptor->run == run_overdrive)
         return create_overdrive(rate, channels);
+    if (descriptor->run == run_eqbank)
+        return create_eqbank(rate, channels);
     return create_instance(rate, channels, 1, false, false);
 }
 
@@ -392,6 +444,7 @@ static void
 cleanup(LV2_Handle instance)
 {
     Plugin *self = instance;
+    free(self->eqbank);
     free(self->overdrive);
     free(self->distort);
     free(self->vibrato);
@@ -432,6 +485,8 @@ static const LV2_Descriptor descriptors[] = {
     {GNUITAR_URI "distort-stereo", instantiate_stereo, connect_port, activate, run_distort, NULL, cleanup, NULL},
     {GNUITAR_URI "overdrive-mono", instantiate_mono, connect_port, activate, run_overdrive, NULL, cleanup, NULL},
     {GNUITAR_URI "overdrive-stereo", instantiate_stereo, connect_port, activate, run_overdrive, NULL, cleanup, NULL},
+    {GNUITAR_URI "eq-bank-mono", instantiate_mono, connect_port, activate, run_eqbank, NULL, cleanup, NULL},
+    {GNUITAR_URI "eq-bank-stereo", instantiate_stereo, connect_port, activate, run_eqbank, NULL, cleanup, NULL},
 };
 
 LV2_SYMBOL_EXPORT

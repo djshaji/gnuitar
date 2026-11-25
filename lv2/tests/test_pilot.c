@@ -591,6 +591,138 @@ test_overdrive(Plugin plugin)
         CHECK(memcmp(left, out_r, sizeof(right)) == 0);
 }
 
+enum { eq_bands = 14 };
+static const unsigned int eq_centers[eq_bands] = {40, 100, 200, 320, 640, 1000, 1600,
+    2200, 3000, 4000, 6000, 8000, 12000, 16000};
+static const unsigned int eq_widths[eq_bands] = {30, 120, 160, 320, 640, 800, 1200,
+    1200, 1400, 1800, 2600, 4000, 6000, 8000};
+
+static float
+reference_eq_frame(Biquad_t filters[eq_bands], float interpolate[8],
+                   float decimate[8], float input, float gain, int channel)
+{
+    float first, second;
+    unsigned int band;
+
+    fir_interpolate_2x(interpolate, input * 8388608.0f, &first, &second);
+    for (band = 0; band < eq_bands; ++band) {
+        first = do_biquad(first, &filters[band], channel);
+        second = do_biquad(second, &filters[band], channel);
+    }
+    return fir_decimate_2x(decimate, first, second) * gain / 8388608.0f;
+}
+
+static void
+test_eqbank(Plugin plugin, double rate)
+{
+    float input[FRAMES], silent[FRAMES] = {0}, output[FRAMES], right[FRAMES];
+    float gains[eq_bands + 1] = {0};
+    Biquad_t filters[eq_bands] = {0};
+    float interpolate[2][8] = {{0}}, decimate[2][8] = {{0}};
+    uint32_t frame, offset = 0, band;
+    float gain;
+
+    gains[12] = -7.0f;
+    gains[13] = 9.0f;
+    gains[eq_bands] = 3.0f;
+    gain = (float) pow(10.0, gains[eq_bands] / 20.0);
+    for (band = 0; band < eq_bands; ++band)
+        set_peq_biquad(2.0 * rate, eq_centers[band], eq_widths[band], gains[band],
+                       &filters[band]);
+    for (band = 0; band <= eq_bands; ++band)
+        connect_control(plugin, band, &gains[band]);
+    for (frame = 0; frame < FRAMES; ++frame)
+        input[frame] = (float) (0.15 * sin(TWO_PI * frame * 12000 / rate)
+                              + 0.2 * cos(TWO_PI * frame * 16000 / rate));
+
+    plugin.descriptor->activate(plugin.handle);
+    connect_audio(plugin, input, silent, output, right);
+    plugin.descriptor->run(plugin.handle, 0);
+    plugin.descriptor->run(plugin.handle, FRAMES);
+    for (frame = 0; frame < FRAMES; ++frame) {
+        float expected = reference_eq_frame(filters, interpolate[0], decimate[0], input[frame], gain, 0);
+        check_audio(output[frame], expected);
+        if (plugin.channels == 2)
+            check_audio(right[frame], reference_eq_frame(filters, interpolate[1], decimate[1],
+                                                        0.0f, gain, 1));
+    }
+
+    plugin.descriptor->activate(plugin.handle);
+    while (offset < FRAMES) {
+        uint32_t frames = offset % 183 + 1;
+        if (frames > FRAMES - offset)
+            frames = FRAMES - offset;
+        connect_audio(plugin, input + offset, silent + offset,
+                      (plugin.channels == 2 ? silent : input) + offset, input + offset);
+        plugin.descriptor->run(plugin.handle, frames);
+        offset += frames;
+    }
+    CHECK(memcmp(plugin.channels == 2 ? silent : input, output, sizeof(output)) == 0);
+    if (plugin.channels == 2)
+        CHECK(memcmp(input, right, sizeof(right)) == 0);
+}
+
+static void
+test_eqbank_live_control(Plugin plugin, double rate)
+{
+    enum { count = 128 };
+    Biquad_t filters[eq_bands] = {0};
+    float input[count], output[count], other[count];
+    float interpolate[8] = {0}, decimate[8] = {0};
+    float gains[eq_bands + 1] = {0};
+    unsigned int band, i;
+
+    for (band = 0; band < eq_bands; ++band)
+        set_peq_biquad(2.0 * rate, eq_centers[band], eq_widths[band], 0.0, &filters[band]);
+    for (i = 0; i < count; ++i)
+        input[i] = (float) sin(TWO_PI * i * 16000.0 / rate);
+    for (band = 0; band <= eq_bands; ++band)
+        connect_control(plugin, band, &gains[band]);
+    plugin.descriptor->activate(plugin.handle);
+
+    for (i = 0; i < count; ++i) {
+        float expected;
+
+        if (i == 19) {
+            gains[13] = 9.0f;
+            set_peq_biquad(2.0 * rate, 16000, 8000, gains[13], &filters[13]);
+        }
+        connect_audio(plugin, input + i, input + i, output + i, other + i);
+        plugin.descriptor->run(plugin.handle, 1);
+        expected = reference_eq_frame(filters, interpolate, decimate, input[i], 1.0f, 0);
+        check_audio(output[i], expected);
+        if (plugin.channels == 2)
+            check_audio(other[i], expected);
+    }
+}
+
+static void
+test_eqbank_low_rate(const LV2_Descriptor *descriptor, uint32_t channels,
+                     const char *bundle_path)
+{
+    Plugin plugin = open_plugin(descriptor, channels, 16000.0, bundle_path);
+    float input[FRAMES] = {0.5f}, output[FRAMES], right[FRAMES];
+    float flat[FRAMES], flat_right[FRAMES];
+    float high_band = 0.0f;
+    uint32_t i;
+
+    connect_control(plugin, 13, &high_band);
+    descriptor->activate(plugin.handle);
+    connect_audio(plugin, input, input, flat, flat_right);
+    descriptor->run(plugin.handle, FRAMES);
+
+    high_band = 9.9f;
+    descriptor->activate(plugin.handle);
+    connect_audio(plugin, input, input, output, right);
+    descriptor->run(plugin.handle, FRAMES);
+    for (i = 0; i < FRAMES; ++i) {
+        check_audio(output[i], flat[i]);
+        if (channels == 2)
+            check_audio(right[i], flat_right[i]);
+    }
+    descriptor->cleanup(plugin.handle);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -602,6 +734,7 @@ main(int argc, char **argv)
         URI_PREFIX "sustain-mono", URI_PREFIX "sustain-stereo",
         URI_PREFIX "distort-mono", URI_PREFIX "distort-stereo",
         URI_PREFIX "overdrive-mono", URI_PREFIX "overdrive-stereo",
+        URI_PREFIX "eq-bank-mono", URI_PREFIX "eq-bank-stereo",
     };
     const LV2_Descriptor *(*get_descriptor)(uint32_t);
     void *library;
@@ -649,14 +782,20 @@ main(int argc, char **argv)
                     test_sustain(plugin);
                 else if (i < 12)
                     test_distort(plugin, rates[r]);
-                else
+                else if (i < 14)
                     test_overdrive(plugin);
+                else {
+                    test_eqbank(plugin, rates[r]);
+                    test_eqbank_live_control(plugin, rates[r]);
+                }
                 descriptor->cleanup(plugin.handle);
             }
             if (i < 6)
                 test_vibrato_multiple_wraps(descriptor, channels, bundle_path);
             if (i == 10 || i == 11)
                 test_distort_low_rate(descriptor, channels, bundle_path);
+            if (i >= 14)
+                test_eqbank_low_rate(descriptor, channels, bundle_path);
         }
     }
 
