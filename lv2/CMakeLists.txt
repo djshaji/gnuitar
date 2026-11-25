@@ -10,7 +10,7 @@ set(GNUITAR_BUNDLE_DIR "${CMAKE_CURRENT_BINARY_DIR}/bundles/gnuitar.lv2")
 set(GNUITAR_LV2_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/lv2"
     CACHE STRING "Directory where LV2 bundles are installed")
 
-add_library(gnuitar_lv2 MODULE pilot.c ../src/biquad.c)
+add_library(gnuitar_lv2 MODULE pilot.c ../src/biquad.c ../src/rcfilter.c)
 target_compile_features(gnuitar_lv2 PRIVATE c_std_99)
 target_compile_definitions(gnuitar_lv2 PRIVATE FLOAT_DSP _DEFAULT_SOURCE)
 target_include_directories(gnuitar_lv2 PRIVATE "${LV2_INCLUDE_DIR}" ../src)

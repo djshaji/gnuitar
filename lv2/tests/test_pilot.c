@@ -354,6 +354,189 @@ test_vibrato_multiple_wraps(const LV2_Descriptor *descriptor, uint32_t channels,
     descriptor->cleanup(plugin.handle);
 }
 
+static void
+test_sustain(Plugin plugin)
+{
+    float left[FRAMES] = {0}, right[FRAMES] = {0};
+    float out_l[FRAMES], out_r[FRAMES];
+    float settings[] = {100.0f, 15.625f, 100.0f};
+    uint32_t frame, i;
+
+    for (i = 0; i < 3; ++i)
+        connect_control(plugin, i, &settings[i]);
+    plugin.descriptor->activate(plugin.handle);
+    connect_audio(plugin, left, right, out_l, out_r);
+    plugin.descriptor->run(plugin.handle, 0);
+    plugin.descriptor->run(plugin.handle, FRAMES);
+
+    for (frame = 0; frame < FRAMES; ++frame) {
+        CHECK(out_l[frame] == 0.0f);
+        if (plugin.channels == 2)
+            CHECK(out_r[frame] == 0.0f);
+    }
+
+    left[0] = 0.0005f;
+    right[0] = 0.2f;
+    plugin.descriptor->run(plugin.handle, 1);
+    /* Reference the original gain and gate equations with the legacy internal units. */
+    for (i = 0; i < plugin.channels; ++i) {
+        float sample = i == 0 ? left[0] : right[0];
+        double envelope = sample * 8388608.0 * (40.0 / 256.0);
+        double gain = 2.56 * (30000.0 / envelope) - 1.56;
+        check_audio(i == 0 ? out_l[0] : out_r[0],
+                    sample * gain * fmin(1.0, envelope / 25600.0));
+    }
+
+    /* Run a long tail through multiple reconnects with the gate disabled. */
+    settings[2] = 0.0f;
+    left[0] = 0.0f;
+    right[0] = 0.0f;
+    for (i = 0; i < 3; ++i) {
+        plugin.descriptor->run(plugin.handle, FRAMES);
+        for (frame = 0; frame < FRAMES; ++frame) {
+            CHECK(out_l[frame] == 0.0f);
+            if (plugin.channels == 2)
+                CHECK(out_r[frame] == 0.0f);
+        }
+    }
+
+    for (frame = 0; frame < FRAMES; ++frame) {
+        left[frame] = (float) sin(frame * 0.07) * 0.03f;
+        right[frame] = (float) cos(frame * 0.03) * 0.2f;
+    }
+    plugin.descriptor->activate(plugin.handle);
+    plugin.descriptor->run(plugin.handle, FRAMES);
+    plugin.descriptor->activate(plugin.handle);
+    for (frame = 0; frame < FRAMES; ++frame) {
+        connect_audio(plugin, left + frame, right + frame,
+                      (plugin.channels == 2 ? right : left) + frame, left + frame);
+        plugin.descriptor->run(plugin.handle, 1);
+    }
+    CHECK(memcmp(plugin.channels == 2 ? right : left, out_l, sizeof(left)) == 0);
+    if (plugin.channels == 2)
+        CHECK(memcmp(left, out_r, sizeof(right)) == 0);
+
+    plugin.descriptor->activate(plugin.handle);
+    settings[1] = 0.0f;
+    left[0] = 0.01f;
+    right[0] = -0.03f;
+    connect_audio(plugin, left, right, out_l, out_r);
+    plugin.descriptor->run(plugin.handle, 1);
+    CHECK(out_l[0] == left[0]);
+    if (plugin.channels == 2)
+        CHECK(out_r[0] == right[0]);
+}
+
+static void
+legacy_distort(float samples[FRAMES], double rate, int drive, int sat, int level,
+               double lowpass)
+{
+    const double rc_cap = 1.0 / (TWO_PI * 350.0 * 1000.0);
+    const double capacitance = 1.0 / (4.0 * pow(TWO_PI * lowpass / 2.0, 2.0) * 0.05);
+    double current = 0.0, velocity = 0.0, previous = 0.0;
+    int last_distorted = 0;
+    uint32_t stage, frame;
+
+    for (frame = 0; frame < FRAMES; ++frame)
+        samples[frame] *= 8388608.0f;
+
+    for (stage = 0; stage < 10; ++stage) {
+        double prev_in = 0.0, i = 0.0;
+        for (frame = 0; frame < FRAMES; ++frame) {
+            double sample = samples[frame];
+            i += (sample - prev_in - i / (rate * rc_cap)) * 0.001;
+            prev_in = sample;
+            samples[frame] = (float) (i * 1000.0 * 1.5);
+        }
+    }
+
+    for (frame = 0; frame < FRAMES; ++frame) {
+        double sample = (double) samples[frame] * drive / 16.0;
+        double delta = (double) sat * 256.0;
+        sample = fmax(last_distorted - delta, fmin(last_distorted + delta, sample));
+        last_distorted = (int) sample;
+        samples[frame] = (float) (sample * level / 256.0);
+    }
+
+    for (frame = 0; frame < FRAMES; ++frame) {
+        double sample = samples[frame];
+        velocity += (sample - previous - current / (rate * capacitance) - 300.0 * velocity)
+                  / (0.05 * rate);
+        current += velocity;
+        previous = sample;
+        samples[frame] = (int) (current * 500.0) / 8388608.0f;
+    }
+}
+
+static void
+test_distort(Plugin plugin, double rate)
+{
+    float left[FRAMES], right[FRAMES], out_l[FRAMES], out_r[FRAMES];
+    float ref_l[FRAMES], ref_r[FRAMES];
+    float settings[] = {55.5f, 100.0f / 3.0f, 7.8125f, 1800.0f};
+    uint32_t frame, control, offset = 0;
+
+    for (frame = 0; frame < FRAMES; ++frame) {
+        left[frame] = (float) sin(frame * 0.11) * 0.8f;
+        right[frame] = (float) cos(frame * 0.31) * 0.5f;
+    }
+
+    for (control = 0; control < 4; ++control)
+        connect_control(plugin, control, &settings[control]);
+
+    plugin.descriptor->activate(plugin.handle);
+    connect_audio(plugin, left, right, out_l, out_r);
+    plugin.descriptor->run(plugin.handle, 0);
+    plugin.descriptor->run(plugin.handle, FRAMES);
+
+    memcpy(ref_l, left, sizeof(left));
+    legacy_distort(ref_l, rate, 555, 10000, 20, 1800.0);
+    if (plugin.channels == 2) {
+        memcpy(ref_r, right, sizeof(right));
+        legacy_distort(ref_r, rate, 555, 10000, 20, 1800.0);
+    }
+    for (frame = 0; frame < FRAMES; ++frame) {
+        check_audio(out_l[frame], ref_l[frame]);
+        if (plugin.channels == 2)
+            check_audio(out_r[frame], ref_r[frame]);
+    }
+
+    plugin.descriptor->activate(plugin.handle);
+    while (offset < FRAMES) {
+        uint32_t frames = offset % 263 + 1;
+        if (frames > FRAMES - offset)
+            frames = FRAMES - offset;
+        connect_audio(plugin, left + offset, right + offset,
+                      (plugin.channels == 2 ? right : left) + offset, left + offset);
+        plugin.descriptor->run(plugin.handle, frames);
+        offset += frames;
+    }
+    CHECK(memcmp(plugin.channels == 2 ? right : left, out_l, sizeof(left)) == 0);
+    if (plugin.channels == 2)
+        CHECK(memcmp(left, out_r, sizeof(right)) == 0);
+}
+
+static void
+test_distort_low_rate(const LV2_Descriptor *descriptor, uint32_t channels,
+                      const char *bundle_path)
+{
+    Plugin plugin = open_plugin(descriptor, channels, 8000.0, bundle_path);
+    float input[FRAMES] = {0.9f}, out_l[FRAMES], out_r[FRAMES];
+    float lowpass = 3000.0f;
+    uint32_t frame;
+
+    connect_audio(plugin, input, input, out_l, out_r);
+    connect_control(plugin, 3, &lowpass);
+    descriptor->activate(plugin.handle);
+    descriptor->run(plugin.handle, FRAMES);
+    for (frame = 0; frame < FRAMES; ++frame) {
+        CHECK(isfinite(out_l[frame]) && fabsf(out_l[frame]) < 10.0f);
+        if (channels == 2)
+            CHECK(isfinite(out_r[frame]) && fabsf(out_r[frame]) < 10.0f);
+    }
+    descriptor->cleanup(plugin.handle);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -362,6 +545,8 @@ main(int argc, char **argv)
         URI_PREFIX "tremolo-mono", URI_PREFIX "tremolo-stereo",
         URI_PREFIX "tremolo-bar-mono", URI_PREFIX "tremolo-bar-stereo",
         URI_PREFIX "noise-gate-mono", URI_PREFIX "noise-gate-stereo",
+        URI_PREFIX "sustain-mono", URI_PREFIX "sustain-stereo",
+        URI_PREFIX "distort-mono", URI_PREFIX "distort-stereo",
     };
     const LV2_Descriptor *(*get_descriptor)(uint32_t);
     void *library;
@@ -403,18 +588,24 @@ main(int argc, char **argv)
                 Plugin plugin = open_plugin(descriptor, channels, rates[r], bundle_path);
                 if (i < 6)
                     test_vibrato(plugin, rates[r], r == 0 ? 43.0f : -41.0f);
-                else
+                else if (i < 8)
                     test_noise_gate(plugin, rates[r]);
+                else if (i < 10)
+                    test_sustain(plugin);
+                else
+                    test_distort(plugin, rates[r]);
                 descriptor->cleanup(plugin.handle);
             }
             if (i < 6)
                 test_vibrato_multiple_wraps(descriptor, channels, bundle_path);
+            if (i >= 10)
+                test_distort_low_rate(descriptor, channels, bundle_path);
         }
     }
 
     CHECK(!get_descriptor(i));
     free(bundle_path);
     CHECK(dlclose(library) == 0);
-    puts("Verified gain, legacy modulation parity, linked gate timing, aliasing, and variable blocks.");
+    puts("Verified legacy DSP parity, sustain silence, linked gate timing, aliasing, and variable blocks.");
     return EXIT_SUCCESS;
 }

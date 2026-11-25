@@ -24,19 +24,13 @@
 #define _DISTORT_H_ 1
 
 #include "effect.h"
-#include "rcfilter.h"
+#include "dsp/distort_dsp.h"
 
 effect_t * distort_create(void);
 
 struct distort_params {
-    int             sat,
-                    level,
-                    drive,
-                    lastval[MAX_CHANNELS],
-                    noisegate;
-    int             lowpass;
-    struct filter_data fd;
-    struct filter_data noise;
+    int sat, level, drive, lowpass;
+    DistortDSP dsp;
 };
 
 #endif

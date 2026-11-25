@@ -99,6 +99,7 @@
  */
 
 #include "sustain.h"
+#include "dsp/sustain_dsp.h"
 #include <stdlib.h>
 #ifndef _WIN32
 #    include <unistd.h>
@@ -248,60 +249,24 @@ static void
 sustain_filter(struct effect *p, data_block_t *db)
 {
 
-    int             count;
-    DSP_SAMPLE     *s;
-    struct sustain_params *ds;
-    DSP_SAMPLE      volAccum,
-                    tmp;
-    float           CompW1;
-    float           CompW2;
-    float           gateFac;
-    float           compFac;
+    struct sustain_params *ds = p->params;
+    DSP_SAMPLE *samples = db->data;
+    DSP_SAMPLE envelope = ds->volaccum;
+    float weight = ds->sust / 100.0f;
+    int i;
 
-    ds = (struct sustain_params *) p->params;
+    for (i = 0; i < db->len; ++i) {
+        DSP_SAMPLE magnitude = samples[i] < 0 ? -samples[i] : samples[i];
+        float output;
 
-    count = db->len;
-    s = db->data;
-
-    volAccum = ds->volaccum;
-    CompW1 = ds->sust / 100.0f;
-    CompW2 = 1.0f - CompW1;
-
-    while (count) {
-	tmp = *s;
-	/*
-	 * update volAccum 
-	 */
-	tmp = (tmp < 0) ? -tmp : tmp;
-	volAccum = (256 - ds->noise) * volAccum + ds->noise * tmp;
-	volAccum /= 256;
-
-	/*
-	 * handle compression 
-	 */
-	compFac = 30000.0f / (float) volAccum;
-	compFac = CompW1 * compFac + CompW2;
-	/*
-	 * handle gate 
-	 */
-	if (ds->threshold <= 1.0f)
-	    gateFac = 1.0f;
-	else
-	    gateFac = (volAccum > (ds->threshold * 100)) ? 1.0f :
-		((float) (volAccum) / (float) (ds->threshold * 100));
-	/*
-	 * process signal... 
-	 */
-	tmp = ((float) (*s) * compFac * gateFac);
+        envelope = ((256 - ds->noise) * envelope + ds->noise * magnitude) / 256;
+        output = gnuitar_sustain_sample(samples[i], envelope, weight, ds->threshold);
 #ifdef CLIP_EVERYWHERE
-        CLIP_SAMPLE(tmp)
+        CLIP_SAMPLE(output)
 #endif
-	*s = tmp;
-	s++;
-	count--;
+        samples[i] = output;
     }
-    ds->volaccum = volAccum;
-
+    ds->volaccum = envelope;
 }
 
 static void

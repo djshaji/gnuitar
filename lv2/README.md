@@ -1,6 +1,7 @@
 # GNUitar LV2 plugins
 
-The Linux bundle provides Digital Amp, Tremolo, Tremolo Bar, and Noise Gate.
+The Linux bundle provides Digital Amp, Tremolo, Tremolo Bar, Noise Gate,
+Sustain, and Distort.
 Each effect has mono and stereo variants, and controls take effect at host
 block boundaries.
 
@@ -15,6 +16,13 @@ block boundaries.
   corresponds to about −36.3 dBFS. The closing threshold is limited to the
   opening threshold. Attack, hold and release are in milliseconds, with
   linear gain ramps and a gate that starts closed.
+- Sustain retains GNUitar's sustain, noise, and gate scales. Each channel
+  has its own envelope, which persists across blocks. Silence stays at
+  zero even when the envelope has decayed or the detector is frozen.
+- Distort pairs the legacy RC high-pass and LC output filter with the
+  original drive, saturation, and level calculations. It supports sample
+  rates of 8 kHz and up. On low-rate hosts, its low-pass setting is limited
+  to one-sixth of the sample rate to keep the LC integrator stable.
 
 ## Build and test
 
