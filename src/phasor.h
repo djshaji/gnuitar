@@ -24,17 +24,14 @@
 #define _PHASOR_H_ 1
 
 #include "effect.h"
-#include "biquad.h"
-
-#define MAX_PHASOR_FILTERS  24
+#include "dsp/spatial_dsp.h"
 
 extern effect_t *   phasor_create(void);
 
 struct phasor_params {
-    double          depth, sweep_time, drywet, f;
+    double          depth, sweep_time, drywet;
     int             stereo;
-    Biquad_t        allpass[MAX_PHASOR_FILTERS];
-    Hilbert_t       hilb;
+    PhaserDSP       dsp;
 };
 
 #endif

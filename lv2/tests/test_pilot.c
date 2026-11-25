@@ -937,6 +937,85 @@ test_reverb_chorus(const LV2_Descriptor *descriptor, const char *path, double ra
     descriptor->cleanup(handle);
 }
 
+static void
+test_spatial(const LV2_Descriptor *descriptor, const char *path, double rate,
+             uint32_t inputs, uint32_t outputs, bool rotary)
+{
+    enum { count = 20003 };
+    const LV2_Feature *const features[] = {NULL};
+    LV2_Handle handle = descriptor->instantiate(descriptor, rate, path, features);
+    float left[count], right[count] = {0}, out_l[count], out_r[count];
+    float period = 225.0f, wet = 67.0f, depth = 100.0f;
+    uint32_t frame, offset = 0, block = 0;
+
+    CHECK(handle);
+    for (frame = 0; frame < count; ++frame)
+        left[frame] = (float) (0.15 * cos(0.032 * frame) + 0.25 * sin(0.17 * frame));
+    descriptor->connect_port(handle, 0, left);
+    if (inputs == 2)
+        descriptor->connect_port(handle, 1, right);
+    descriptor->connect_port(handle, inputs, out_l);
+    if (outputs == 2)
+        descriptor->connect_port(handle, inputs + 1, out_r);
+    descriptor->connect_port(handle, inputs + outputs, &period);
+    if (!rotary)
+        descriptor->connect_port(handle, inputs + outputs + 1, &wet);
+    if (!rotary && inputs == outputs)
+        descriptor->connect_port(handle, inputs + outputs + 2, &depth);
+
+    descriptor->activate(handle);
+    out_l[0] = 7.0f;
+    descriptor->run(handle, 0);
+    CHECK(out_l[0] == 7.0f);
+    descriptor->run(handle, count);
+    for (frame = 0; frame < count; ++frame) {
+        CHECK(isfinite(out_l[frame]) && fabsf(out_l[frame]) < 10.0f);
+        if (outputs == 2)
+            CHECK(isfinite(out_r[frame]) && fabsf(out_r[frame]) < 10.0f);
+        if (inputs == 2)
+            check_audio(out_r[frame], 0.0f);
+    }
+    CHECK(memcmp(out_l, left, sizeof(left)) != 0);
+    if (inputs != outputs)
+        CHECK(memcmp(out_l, out_r, sizeof(out_l)) != 0);
+
+    descriptor->activate(handle);
+    while (offset < count) {
+        const uint32_t sizes[] = {0, 1, 7, 2, 263, 9, 3, 127};
+        uint32_t frames = sizes[block++ % (sizeof(sizes) / sizeof(sizes[0]))];
+        if (frames > count - offset)
+            frames = count - offset;
+        descriptor->connect_port(handle, 0, left + offset);
+        if (inputs == 2)
+            descriptor->connect_port(handle, 1, right + offset);
+        descriptor->connect_port(handle, inputs, (outputs == 2 ? right : left) + offset);
+        if (outputs == 2)
+            descriptor->connect_port(handle, inputs + 1, left + offset);
+        descriptor->run(handle, frames);
+        offset += frames;
+    }
+    CHECK(memcmp(outputs == 2 ? right : left, out_l, sizeof(out_l)) == 0);
+    if (outputs == 2)
+        CHECK(memcmp(left, out_r, sizeof(out_r)) == 0);
+
+    if (!rotary) {
+        float dry_l = 0.25f, dry_r = -0.3f;
+
+        wet = 0.0f;
+        descriptor->connect_port(handle, 0, &dry_l);
+        if (inputs == 2)
+            descriptor->connect_port(handle, 1, &dry_r);
+        descriptor->connect_port(handle, inputs, out_l);
+        if (outputs == 2)
+            descriptor->connect_port(handle, inputs + 1, out_r);
+        descriptor->run(handle, 1);
+        CHECK(out_l[0] == dry_l);
+        if (outputs == 2)
+            CHECK(out_r[0] == (inputs == 2 ? dry_r : dry_l));
+    }
+    descriptor->cleanup(handle);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -953,6 +1032,8 @@ main(int argc, char **argv)
         URI_PREFIX "echo-mono", URI_PREFIX "echo-stereo", URI_PREFIX "echo-mono-to-stereo",
         URI_PREFIX "reverb-mono", URI_PREFIX "reverb-stereo",
         URI_PREFIX "chorus-mono", URI_PREFIX "chorus-stereo", URI_PREFIX "chorus-mono-to-stereo",
+        URI_PREFIX "phaser-mono", URI_PREFIX "phaser-stereo", URI_PREFIX "phaser-mono-to-stereo",
+        URI_PREFIX "rotary-speaker-mono-to-stereo",
     };
     const LV2_Descriptor *(*get_descriptor)(uint32_t);
     void *library;
@@ -981,6 +1062,14 @@ main(int argc, char **argv)
         const LV2_Descriptor *descriptor = get_descriptor(i);
         uint32_t channels = i % 2 + 1;
         CHECK(descriptor && strcmp(descriptor->URI, uris[i]) == 0);
+        if (i >= 27) {
+            const double rates[] = {44100.0, 48000.0, 96000.0};
+            uint32_t rate;
+            for (rate = 0; rate < sizeof(rates) / sizeof(rates[0]); ++rate)
+                test_spatial(descriptor, bundle_path, rates[rate],
+                             i == 28 ? 2 : 1, i == 27 ? 1 : 2, i == 30);
+            continue;
+        }
         if (i >= 22) {
             uint32_t ins = i == 23 || i == 25 ? 2 : 1;
             uint32_t outs = i == 26 ? 2 : ins;

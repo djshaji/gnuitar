@@ -7,11 +7,13 @@
 
 #include "dsp/delay_echo_dsp.h"
 #include "dsp/reverb_chorus_dsp.h"
+#include "dsp/spatial_dsp.h"
 
 #define GNUITAR_URI "https://github.com/djshaji/gnuitar#"
 #define SINE_SIZE 65536
+#define LEGACY_FULL_SCALE 8388608.0f
 
-typedef enum { DELAY, ECHO, REVERB, CHORUS } TimeEffectKind;
+typedef enum { DELAY, ECHO, REVERB, CHORUS, PHASER, ROTARY } TimeEffectKind;
 
 typedef struct {
     const float *inputs[2];
@@ -19,6 +21,8 @@ typedef struct {
     const float *controls[6];
     Backbuf_t *history[2][GNUITAR_REVERB_LINES];
     float *sine;
+    void *spatial;
+    TimeEffectKind kind;
     double phase;
     double rate;
     unsigned int inputs_count, outputs_count, lines, num_controls;
@@ -34,6 +38,7 @@ cleanup(LV2_Handle handle)
         for (line = 0; line < self->lines; ++line)
             del_Backbuf(self->history[channel][line]);
     }
+    free(self->spatial);
     free(self->sine);
     free(self);
 }
@@ -51,11 +56,25 @@ create(double rate, unsigned int inputs, unsigned int outputs, TimeEffectKind ki
     if (!self)
         return NULL;
     self->rate = rate;
+    self->kind = kind;
     self->inputs_count = inputs;
     self->outputs_count = outputs;
     self->lines = kind == ECHO ? GNUITAR_ECHO_MAX_VOICES
-                : kind == REVERB ? GNUITAR_REVERB_LINES : 1;
+                : kind == REVERB ? GNUITAR_REVERB_LINES
+                : kind == PHASER || kind == ROTARY ? 0 : 1;
     self->num_controls = kind == CHORUS ? 6 : 3;
+    if (kind == PHASER || kind == ROTARY) {
+        size_t size = kind == PHASER ? sizeof(PhaserDSP) : sizeof(RotaryDSP);
+
+        if (posix_memalign(&self->spatial, 16, size)) {
+            cleanup(self);
+            return NULL;
+        }
+        if (kind == PHASER && inputs != outputs)
+            self->num_controls = 2;
+        if (kind == ROTARY)
+            self->num_controls = 1;
+    }
     if (kind == CHORUS) {
         self->sine = malloc((SINE_SIZE + 1) * sizeof(*self->sine));
         if (!self->sine) {
@@ -117,6 +136,10 @@ activate(LV2_Handle handle)
     unsigned int channel, line;
 
     self->phase = 0.0;
+    if (self->kind == PHASER)
+        gnuitar_phaser_reset(self->spatial);
+    if (self->kind == ROTARY)
+        gnuitar_rotary_reset(self->spatial, self->rate);
     for (channel = 0; channel < self->inputs_count; ++channel) {
         for (line = 0; line < self->lines; ++line) {
             Backbuf_t *history = self->history[channel][line];
@@ -243,6 +266,57 @@ run_chorus(LV2_Handle handle, uint32_t frames)
     }
 }
 
+static float
+spatial_input(float value)
+{
+    value *= LEGACY_FULL_SCALE;
+    return isfinite(value) ? value : 0.0f;
+}
+
+static void
+run_phaser(LV2_Handle handle, uint32_t frames)
+{
+    TimeEffect *self = handle;
+    PhaserDSP *state = self->spatial;
+    bool spread = self->inputs_count != self->outputs_count;
+    double step = 1000.0 / control(self->controls[0], 200, 150, 2000) / self->rate;
+    float wet = control(self->controls[1], 50, 0, 100) / 100.0;
+    double depth = spread ? 0.0 : control(self->controls[2], 100, 0, 100) / 100.0;
+    uint32_t frame;
+
+    for (frame = 0; frame < frames; ++frame) {
+        float left = spatial_input(self->inputs[0][frame]);
+        float right = self->inputs_count == 2 ? spatial_input(self->inputs[1][frame]) : 0.0f;
+
+        if (spread) {
+            DSP_SAMPLE output[2];
+            gnuitar_phaser_spread(state, left, step, wet, output);
+            self->outputs[0][frame] = output[0] / LEGACY_FULL_SCALE;
+            self->outputs[1][frame] = output[1] / LEGACY_FULL_SCALE;
+        } else {
+            gnuitar_phaser_tick(state, step, depth);
+            self->outputs[0][frame] = gnuitar_phaser_channel(state, left, 0, wet) / LEGACY_FULL_SCALE;
+            if (self->outputs_count == 2)
+                self->outputs[1][frame] = gnuitar_phaser_channel(state, right, 1, wet) / LEGACY_FULL_SCALE;
+        }
+    }
+}
+
+static void
+run_rotary(LV2_Handle handle, uint32_t frames)
+{
+    TimeEffect *self = handle;
+    double step = 2000.0 / control(self->controls[0], 1000, 200, 5000) / self->rate;
+    uint32_t frame;
+
+    for (frame = 0; frame < frames; ++frame) {
+        DSP_SAMPLE output[2];
+        gnuitar_rotary_spread(self->spatial, spatial_input(self->inputs[0][frame]), step, output);
+        self->outputs[0][frame] = output[0] / LEGACY_FULL_SCALE;
+        self->outputs[1][frame] = output[1] / LEGACY_FULL_SCALE;
+    }
+}
+
 static TimeEffectKind
 effect_kind(const LV2_Descriptor *descriptor)
 {
@@ -252,6 +326,10 @@ effect_kind(const LV2_Descriptor *descriptor)
         return REVERB;
     if (descriptor->run == run_chorus)
         return CHORUS;
+    if (descriptor->run == run_phaser)
+        return PHASER;
+    if (descriptor->run == run_rotary)
+        return ROTARY;
     return DELAY;
 }
 
@@ -297,6 +375,10 @@ gnuitar_time_effect_descriptor(uint32_t index)
         {GNUITAR_URI "chorus-mono", instantiate_mono, connect_port, activate, run_chorus, NULL, cleanup, NULL},
         {GNUITAR_URI "chorus-stereo", instantiate_stereo, connect_port, activate, run_chorus, NULL, cleanup, NULL},
         {GNUITAR_URI "chorus-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_chorus, NULL, cleanup, NULL},
+        {GNUITAR_URI "phaser-mono", instantiate_mono, connect_port, activate, run_phaser, NULL, cleanup, NULL},
+        {GNUITAR_URI "phaser-stereo", instantiate_stereo, connect_port, activate, run_phaser, NULL, cleanup, NULL},
+        {GNUITAR_URI "phaser-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_phaser, NULL, cleanup, NULL},
+        {GNUITAR_URI "rotary-speaker-mono-to-stereo", instantiate_mono_to_stereo, connect_port, activate, run_rotary, NULL, cleanup, NULL},
     };
     return index < sizeof(descriptors) / sizeof(descriptors[0]) ? &descriptors[index] : NULL;
 }
