@@ -85,6 +85,32 @@ block boundaries.
   that use the time-domain backend. Hosts can display the control
   outputs in their generic plugin UI if supported.
 
+## Tube Amplifier controls
+
+The mono and stereo variants use the same controls. The tone controls sit
+after the second tube stage, so any later stages can change how their EQ
+sounds. Gain drives each stage. Once the amp is saturating, increasing Gain
+can change the distortion while the output level moves only slightly.
+
+| Control | Range and default | What it changes |
+| --- | --- | --- |
+| Stages | 2–4, default 4 | Number of tube stages in the signal path. Changing it can affect both distortion and output level. |
+| Gain | 30–50 dB, default 35 dB | Drive into each tube stage. |
+| Bias Factor | −25 to +25, default −7 | How much the signal shifts the tube's bias as you play. |
+| Asymmetry | −5000 to +5000, default −3500 | Static bias offset that shapes how differently the amp distorts the positive and negative halves of the waveform. |
+| Cabinet Model | Marshall G15R (default), Princeton II | Selects the cabinet impulse response. |
+| Cabinet Quality | Lowest, Normal (default), High, Extreme | Uses 64, 128, 256, or 512 impulse-response taps at 44.1 kHz. Longer responses use more CPU. |
+| Bass | −10 to +10 dB, default +3 dB | Low shelf at 500 Hz. |
+| Middle | −20 to 0 dB, default −10 dB | Midrange cut centered at 650 Hz. |
+| Treble | −10 to +10 dB, default 0 dB | High shelf at 800 Hz. |
+
+To check the controls in Ardour, loop a dry guitar clip and switch
+**Cabinet Model** between **Marshall G15R** and **Princeton II**. Listen
+for a change in tone. If both settings sound identical, check that the
+plugin is active and that an automation lane in **Play** mode is not
+overriding the setting. To hear how **Gain** changes the onset of
+distortion, lower the signal level before the plugin and sweep Gain again.
+
 ## Build and test
 
 Install a C compiler, CMake 3.19 or later, and the LV2 development headers.
